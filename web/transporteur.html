@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FRETRAU — Espace transporteur</title>
+  <meta name="description" content="Transporteurs routiers : recevez des chargements, répondez en un clic, suivez vos règlements.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="/">FRET<b>RAU</b></a>
+      <nav><a href="/">Expéditeurs</a><a href="/portail.html">Espace client</a><a href="#" id="logout" class="hidden">Se déconnecter</a></nav>
+    </div>
+  </header>
+  <main class="wrap page">
+    <section id="auth" class="hidden">
+      <div class="page-head"><div>
+        <h1>Roulez plein, soyez payé à date fixe.</h1>
+        <p class="muted">Des chargements proposés selon votre base et votre matériel, un prix affiché avant d'accepter, un règlement à 30 jours après la preuve de livraison.</p>
+      </div></div>
+      <div class="row">
+        <div class="card">
+          <h2>Rejoindre le réseau</h2>
+          <form id="apply-form" novalidate>
+            <div class="hp" aria-hidden="true"><label>Ne pas remplir<input name="website" tabindex="-1" autocomplete="off"></label></div>
+            <div class="row">
+              <div><label for="a-company">Raison sociale</label><input id="a-company" autocomplete="organization" required></div>
+              <div><label for="a-siret">SIRET</label><input id="a-siret" inputmode="numeric" maxlength="17" required></div>
+            </div>
+            <div class="row">
+              <div><label for="a-licence">N° de licence de transport</label><input id="a-licence" required></div>
+              <div><label for="a-insurance">Assurance valable jusqu'au</label><input id="a-insurance" type="date" required></div>
+            </div>
+            <div class="row">
+              <div><label for="a-postcode">Code postal de votre base</label><input id="a-postcode" inputmode="numeric" maxlength="5" required></div>
+              <div><label for="a-equipment">Matériel</label><input id="a-equipment" placeholder="Ex. 3 tautliners, 1 frigo"></div>
+            </div>
+            <label>Transports réalisés</label>
+            <div class="checks">
+              <label><input type="checkbox" id="a-ftl" checked> Camion complet et lots</label>
+              <label><input type="checkbox" id="a-ltl"> Palettes / groupage</label>
+              <label><input type="checkbox" id="a-europe"> International (Europe)</label>
+            </div>
+            <div class="row">
+              <div><label for="a-name">Votre nom</label><input id="a-name" autocomplete="name" required></div>
+              <div><label for="a-phone">Téléphone</label><input id="a-phone" type="tel" autocomplete="tel" required></div>
+            </div>
+            <div class="row">
+              <div><label for="a-email">E-mail</label><input id="a-email" type="email" autocomplete="email" required></div>
+              <div><label for="a-pw">Mot de passe (10 caractères min.)</label><input id="a-pw" type="password" autocomplete="new-password" minlength="10" required></div>
+            </div>
+            <button class="full" type="submit">Envoyer mon dossier</button>
+            <p class="muted small">Votre dossier est contrôlé par notre équipe (licence, assurance, Kbis, attestation de vigilance) avant toute attribution de chargement.</p>
+            <div id="apply-error" class="err hidden" role="alert"></div>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Déjà inscrit</h2>
+          <form id="login-form" novalidate>
+            <label for="l-email">E-mail</label><input id="l-email" type="email" autocomplete="email" required>
+            <label for="l-pw">Mot de passe</label><input id="l-pw" type="password" autocomplete="current-password" required>
+            <button class="full" type="submit">Se connecter</button>
+            <div id="login-error" class="err hidden" role="alert"></div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section id="dash" class="hidden">
+      <div class="page-head"><div><h1>Espace transporteur</h1><p class="muted" id="who"></p></div></div>
+      <div id="banner"></div>
+      <h2>Chargements proposés</h2>
+      <div id="loads" class="stack"></div>
+      <h2>Mes transports</h2>
+      <div id="mine" class="stack"></div>
+      <h2>Règlements</h2>
+      <table class="data"><thead><tr><th>Transport</th><th>Montant HT</th><th>Échéance</th><th>État</th></tr></thead><tbody id="payables"></tbody></table>
+    </section>
+  </main>
+  <script src="/common.js"></script>
+  <script src="/transporteur.js"></script>
+</body>
+</html>
