@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FRETRAU — Espace client</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="/">FRET<b>RAU</b></a>
+      <nav><a href="/">Nouveau devis</a><a href="/transporteur.html">Transporteurs</a><a href="#" id="logout" class="hidden">Se déconnecter</a></nav>
+    </div>
+  </header>
+  <main class="wrap page">
+    <section id="auth" class="row hidden">
+      <div class="card">
+        <h2>Se connecter</h2>
+        <form id="login-form" novalidate>
+          <label for="l-email">E-mail</label><input id="l-email" type="email" autocomplete="email" required>
+          <label for="l-pw">Mot de passe</label><input id="l-pw" type="password" autocomplete="current-password" required>
+          <button class="full" type="submit">Se connecter</button>
+          <div id="login-error" class="err hidden" role="alert"></div>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Créer un compte expéditeur</h2>
+        <form id="signup-form" novalidate>
+          <div class="hp" aria-hidden="true"><label>Ne pas remplir<input name="website" tabindex="-1" autocomplete="off"></label></div>
+          <div class="row">
+            <div><label for="s-name">Nom</label><input id="s-name" autocomplete="name" required></div>
+            <div><label for="s-company">Société</label><input id="s-company" autocomplete="organization" required></div>
+          </div>
+          <div class="row">
+            <div><label for="s-email">E-mail</label><input id="s-email" type="email" autocomplete="email" required></div>
+            <div><label for="s-phone">Téléphone</label><input id="s-phone" type="tel" autocomplete="tel" required></div>
+          </div>
+          <label for="s-pw">Mot de passe (10 caractères minimum)</label><input id="s-pw" type="password" autocomplete="new-password" minlength="10" required>
+          <button class="full" type="submit">Créer mon compte</button>
+          <div id="signup-error" class="err hidden" role="alert"></div>
+        </form>
+      </div>
+    </section>
+
+    <section id="dash" class="hidden">
+      <div class="page-head">
+        <div><h1 id="hello">Mes expéditions</h1><p class="muted" id="who"></p></div>
+        <a class="btn" href="/">Nouveau devis</a>
+      </div>
+      <div id="empty" class="card hidden"><p class="muted">Aucune expédition pour l'instant. Demandez un prix sur la page d'accueil : vos réservations apparaîtront ici.</p></div>
+      <div id="list" class="stack"></div>
+    </section>
+  </main>
+  <script src="/common.js"></script>
+  <script src="/portail.js"></script>
+</body>
+</html>

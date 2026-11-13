@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>FRETRAU — Administration</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top"><div class="wrap"><a class="brand" href="/">FRET<b>RAU</b></a><span class="badge">Administration</span></div></header>
+  <main class="wrap">
+    <section id="login" class="card">
+      <h2>Connexion</h2>
+      <form id="login-form">
+        <label for="pw">Mot de passe administrateur</label>
+        <input id="pw" type="password" autocomplete="current-password" required>
+        <label for="totp">Code 2FA (si activé)</label>
+        <input id="totp" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+        <button class="full" type="submit">Se connecter</button>
+        <div id="login-error" class="err hidden" role="alert"></div>
+      </form>
+    </section>
+
+    <section id="dash" class="hidden">
+      <div class="tiles" id="tiles"></div>
+      <h2>Réservations</h2>
+      <table class="data"><thead><tr><th>#</th><th>Code</th><th>Trajet</th><th>Statut</th><th>Transporteur</th><th>Prix client HT</th><th>Achat HT</th></tr></thead><tbody id="rows"></tbody></table>
+      <div id="detail" class="card hidden"></div>
+
+      <h2>Transporteurs</h2>
+      <p class="muted" id="carrier-counts"></p>
+      <div class="toolbar">
+        <select id="c-status" aria-label="Statut">
+          <option value="pending_review">Dossiers à contrôler</option><option value="verified">Vérifiés</option>
+          <option value="prospect">Prospects (annuaire public)</option><option value="blocked">Exclus</option>
+        </select>
+        <input id="c-search" placeholder="Nom, SIRET ou code postal" aria-label="Recherche">
+        <button type="button" class="ghost" id="c-refresh">Afficher</button>
+        <input id="c-radius" type="number" min="1" max="2000" value="150" aria-label="Rayon en km">
+        <button type="button" class="ghost" id="c-import">Importer les prospects dans ce rayon (km)</button>
+      </div>
+      <div id="c-msg"></div>
+      <div class="table-scroll"><table class="data"><thead><tr><th>#</th><th>Société</th><th>Base</th><th>Distance</th><th>Licence</th><th>Assurance</th><th>Contact</th><th>Statut</th></tr></thead><tbody id="carriers"></tbody></table></div>
+      <div id="carrier-edit" class="card hidden"></div>
+
+      <h2>Règlements transporteurs</h2>
+      <table class="data"><thead><tr><th>Transport</th><th>Transporteur</th><th>Montant HT</th><th>Échéance</th><th>État</th></tr></thead><tbody id="payables"></tbody></table>
+
+      <h2>Devis par e-mail</h2>
+      <div class="card">
+        <p class="muted">Collez ici un e-mail de demande de transport pour voir la réponse de l'agent (sans service de messagerie branché, la réponse reste dans les e-mails sortants).</p>
+        <form id="intake-form">
+          <label for="i-from">E-mail du demandeur</label><input id="i-from" type="email" required>
+          <label for="i-text">Texte de la demande</label><textarea id="i-text" required placeholder="Bonjour, j'ai 6 palettes (2 400 kg) à enlever à 43290 pour 33000 mardi prochain, avec hayon."></textarea>
+          <button type="submit">Traiter la demande</button>
+          <div id="intake-out"></div>
+        </form>
+      </div>
+      <table class="data"><tbody id="inbound-quotes"></tbody></table>
+
+      <h2>Demandes d'alignement de prix</h2>
+      <table class="data"><tbody id="matches"></tbody></table>
+
+      <h2>E-mails sortants</h2>
+      <table class="data"><tbody id="outbox"></tbody></table>
+      <h2>Journal d'audit</h2>
+      <table class="data"><tbody id="audit"></tbody></table>
+    </section>
+  </main>
+  <script src="/admin.js"></script>
+</body>
+</html>
