@@ -173,3 +173,27 @@ def valid_siret(siret: str) -> bool:
         n = int(ch) * (2 if i % 2 else 1)
         total += n - 9 if n > 9 else n
     return total % 10 == 0
+
+
+# --- Jetons à usage unique (vérification d'adresse, réinitialisation) : seul le hachage est stocké ---
+def new_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def token_hash(token: str) -> str:
+    return hashlib.sha256(("fretrau-token|" + str(token)).encode()).hexdigest()
+
+
+TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{20,80}$")
+_WEAK = {"motdepasse", "password", "azertyuiop", "qwertyuiop", "1234567890", "0123456789", "azerty1234", "fretrau"}
+
+
+def password_problem(password, email="") -> str:
+    """Message d'erreur si le mot de passe est trop faible, sinon chaîne vide."""
+    if not isinstance(password, str) or not 10 <= len(password) <= 200:
+        return "Le mot de passe doit contenir au moins 10 caractères."
+    low = password.lower()
+    local = email.split("@")[0].lower() if email else ""
+    if len(set(low)) < 5 or any(w in low and len(low) < len(w) + 4 for w in _WEAK) or (len(local) >= 4 and local in low):
+        return "Mot de passe trop facile à deviner : évitez les suites, les mots courants et votre adresse e-mail."
+    return ""

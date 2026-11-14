@@ -16,6 +16,7 @@
           <label for="l-email">E-mail</label><input id="l-email" type="email" autocomplete="email" required>
           <label for="l-pw">Mot de passe</label><input id="l-pw" type="password" autocomplete="current-password" required>
           <button class="full" type="submit">Se connecter</button>
+          <p class="small"><a href="/compte">Mot de passe oublié ?</a></p>
           <div id="login-error" class="err hidden" role="alert"></div>
         </form>
       </div>
@@ -32,6 +33,7 @@
             <div><label for="s-phone">Téléphone</label><input id="s-phone" type="tel" autocomplete="tel" required></div>
           </div>
           <label for="s-pw">Mot de passe (10 caractères minimum)</label><input id="s-pw" type="password" autocomplete="new-password" minlength="10" required>
+          <label class="checks"><input type="checkbox" id="s-terms"> J'accepte les <a href="/cgu" target="_blank" rel="noopener">conditions d'utilisation</a> et la <a href="/confidentialite" target="_blank" rel="noopener">politique de confidentialité</a></label>
           <button class="full" type="submit">Créer mon compte</button>
           <div id="signup-error" class="err hidden" role="alert"></div>
         </form>
@@ -41,8 +43,9 @@
     <section id="dash" class="hidden">
       <div class="page-head">
         <div><h1 id="hello">Mes expéditions</h1><p class="muted" id="who"></p></div>
-        <a class="btn" href="/">Nouveau devis</a>
+        <div class="actions"><a class="btn" href="/">Nouveau devis</a><a href="/compte">Mon compte</a><a href="#" id="logout">Se déconnecter</a></div>
       </div>
+      <div id="unverified" class="ok-box hidden">Confirmez votre adresse e-mail avec le lien reçu pour retrouver ici les envois réservés avant la création du compte. <a href="/compte">Renvoyer le lien</a></div>
       <div id="empty" class="card hidden"><p class="muted">Aucune expédition pour l'instant. Demandez un prix sur la page d'accueil : vos réservations apparaîtront ici.</p></div>
       <div id="list" class="stack"></div>
     </section>

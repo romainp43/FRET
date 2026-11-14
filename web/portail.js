@@ -6,8 +6,8 @@ async function start() {
   if (account && account.role === "carrier") { location.href = "/transporteur.html"; return; }
   if (!account) { $("auth").classList.remove("hidden"); return; }
   $("dash").classList.remove("hidden");
-  $("logout").classList.remove("hidden");
   $("who").textContent = `${account.name} — ${account.company}`;
+  $("unverified").classList.toggle("hidden", account.email_verified);
   const { bookings } = await api("/api/my/bookings");
   $("empty").classList.toggle("hidden", bookings.length > 0);
   $("list").replaceChildren(...bookings.map(card));
@@ -45,7 +45,7 @@ onSubmit("login-form", "login-error", async () => {
 onSubmit("signup-form", "signup-error", async (form) => {
   await api("/api/account/signup", {
     name: $("s-name").value, company: $("s-company").value, email: $("s-email").value, phone: $("s-phone").value,
-    password: $("s-pw").value, website: form.querySelector("[name=website]").value,
+    password: $("s-pw").value, accept_terms: $("s-terms").checked, website: form.querySelector("[name=website]").value,
   });
   location.reload();
 });

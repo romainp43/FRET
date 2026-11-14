@@ -20,6 +20,7 @@ from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from fretrau import legal  # noqa: F401 — enregistre les pages légales
 from fretrau import booking, content, geo, invoicing, mailer, market, offers, pricing, registry, security
 from fretrau.agents import compliance, email_agent, intake, llm, vetting, watch
 from fretrau.db import DB
@@ -65,6 +66,10 @@ RL_SIGNUP = security.RateLimiter(5, 3600)
 RL_CONTACT = security.RateLimiter(5, 3600)
 WINDOWS = {"journee": "Dans la journée", "matin": "Matin (8 h - 12 h)", "apres-midi": "Après-midi (13 h - 17 h)"}
 LEAD_TOPICS = ("rappel", "devis", "transporteur", "autre")
+TERMS_VERSION = "2026-11"            # à incrémenter à chaque modification des CGU, CGV ou de la politique de confidentialité
+RL_FORGOT = security.RateLimiter(5, 3600)
+BACKUP_DIR = os.environ.get("FRETRAU_BACKUP_DIR", "")
+BACKUP_KEEP = 30
 GUARD = security.LoginGuard()
 
 
@@ -143,10 +148,12 @@ class Handler(BaseHTTPRequestHandler):
         for part in (self.headers.get("Cookie") or "").split(";"):
             k, _, v = part.strip().partition("=")
             if k == "fretrau_user":
-                user = USER_SESSIONS.verify(v) or ""
-                if user.startswith("acct:") and user[5:].isdigit():
-                    acct = DB_.account_by_id(int(user[5:]))
-                    if acct and (role is None or acct["role"] == role):
+                parts = (USER_SESSIONS.verify(v) or "").split(":")
+                if len(parts) == 3 and parts[0] == "acct" and parts[1].isdigit() and parts[2].isdigit():
+                    acct = DB_.account_by_id(int(parts[1]))
+                    # la version de session change à chaque changement de mot de passe : les anciennes sessions tombent
+                    if (acct and not acct["deleted_at"] and acct["session_version"] == int(parts[2])
+                            and (role is None or acct["role"] == role)):
                         return acct
         return None
 
@@ -411,6 +418,7 @@ class Handler(BaseHTTPRequestHandler):
                 "pickup_address": security.clean_text(d.get("pickup_address"), 200),
                 "delivery_address": security.clean_text(d.get("delivery_address"), 200),
                 "goods": security.clean_text(d.get("goods"), 200),
+                "cgv": {"version": TERMS_VERSION, "accepted_at": int(time.time())},
                 "pickup_window": d.get("pickup_window") if d.get("pickup_window") in WINDOWS else "journee",
                 "delivery_window": d.get("delivery_window") if d.get("delivery_window") in WINDOWS else "journee",
             })
@@ -505,7 +513,9 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---------- comptes ----------
     def session_cookie(self, account_id=None):
-        value = USER_SESSIONS.issue(f"acct:{account_id}") if account_id else ""
+        value = ""
+        if account_id:
+            value = USER_SESSIONS.issue(f"acct:{account_id}:{DB_.account_by_id(account_id)['session_version']}")
         age = 12 * 3600 if account_id else 0
         return (f"fretrau_user={value}; HttpOnly; SameSite=Strict; Path=/; Max-Age={age}"
                 + ("; Secure" if HTTPS else ""))
@@ -521,16 +531,44 @@ class Handler(BaseHTTPRequestHandler):
         if not security.EMAIL_RE.match(ident["email"]) or not security.PHONE_RE.match(ident["phone"]):
             raise ApiError(422, "Coordonnées invalides.")
         pw = d.get("password")
-        if not isinstance(pw, str) or not 10 <= len(pw) <= 200:
-            raise ApiError(422, "Le mot de passe doit contenir au moins 10 caractères.")
+        problem = security.password_problem(pw, ident["email"])
+        if problem:
+            raise ApiError(422, problem)
+        if d.get("accept_terms") is not True:
+            raise ApiError(422, "Vous devez accepter les conditions d'utilisation et la politique de confidentialité.")
         return ident, pw
+
+    def send_account_link(self, account, kind):
+        """Envoie un lien à usage unique : vérification d'adresse (48 h) ou nouveau mot de passe (1 h)."""
+        token = security.new_token()
+        DB_.add_token(account["id"], kind, security.token_hash(token), 48 * 3600 if kind == "verify" else 3600)
+        if kind == "verify":
+            subject = "FRETRAU — confirmez votre adresse e-mail"
+            body = (f"Bonjour {account['name']},\n\nConfirmez votre adresse en ouvrant ce lien (valable 48 h) :\n"
+                    f"{PUBLIC_URL}/compte?verifier={token}\n\nSi vous n'avez pas créé de compte, ignorez ce message.\n\n"
+                    "L'équipe FRETRAU")
+        else:
+            subject = "FRETRAU — nouveau mot de passe"
+            body = (f"Bonjour {account['name']},\n\nPour choisir un nouveau mot de passe, ouvrez ce lien (valable 1 h, "
+                    f"utilisable une seule fois) :\n{PUBLIC_URL}/compte?reinitialiser={token}\n\n"
+                    "Si vous n'êtes pas à l'origine de cette demande, ignorez ce message : votre mot de passe reste inchangé."
+                    "\n\nL'équipe FRETRAU")
+        try:
+            mailer.queue(DB_, account["email"], subject, body)
+            mailer.flush(DB_)
+        except Exception:
+            pass
 
     def api_account(self, method, path):
         if method == "GET" and path == "/api/account/me":
             a = self.account()
             if not a:
                 return self.send_json(200, {"account": None})
-            return self.send_json(200, {"account": {k: a[k] for k in ("role", "email", "name", "company", "phone")}})
+            view = {k: a[k] for k in ("role", "email", "name", "company", "phone")}
+            view["email_verified"] = bool(a["email_verified"])
+            return self.send_json(200, {"account": view})
+        if method == "GET" and path == "/api/account/export":
+            return self.api_account_export(self.require_account(None))
         if method != "POST" or self.headers.get("X-Requested-With") != "fretrau":
             raise ApiError(404, "Introuvable.")
         if path == "/api/account/logout":
@@ -547,7 +585,9 @@ class Handler(BaseHTTPRequestHandler):
                                      ident["company"], ident["phone"])
             if not aid:
                 raise ApiError(409, "Un compte existe déjà avec cette adresse e-mail.")
-            DB_.audit("account", "signup_shipper", str(aid))
+            DB_.set_terms(aid, TERMS_VERSION)
+            self.send_account_link(DB_.account_by_id(aid), "verify")
+            DB_.audit("account", "signup_shipper", f"{aid} cgu={TERMS_VERSION}")
             return self.send_json(201, {"ok": True, "role": "shipper"}, {"Set-Cookie": self.session_cookie(aid)})
         if path == "/api/account/login":
             d = self.read_json()
@@ -564,12 +604,88 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(401, "Identifiants invalides.")
             GUARD.ok(key)
             return self.send_json(200, {"ok": True, "role": a["role"]}, {"Set-Cookie": self.session_cookie(a["id"])})
+        if path == "/api/account/verify":
+            token = str(self.read_json().get("token", ""))
+            aid = DB_.use_token("verify", security.token_hash(token)) if security.TOKEN_RE.match(token) else None
+            if not aid:
+                raise ApiError(400, "Lien invalide ou expiré. Demandez un nouveau lien depuis votre espace.")
+            DB_.set_email_verified(aid)
+            DB_.audit("account", "email_verified", str(aid))
+            return self.send_json(200, {"ok": True})
+        if path == "/api/account/resend":
+            a = self.require_account(None)
+            if not RL_FORGOT.allow(f"resend|{a['id']}"):
+                raise ApiError(429, "Trop de demandes, réessayez plus tard.")
+            if not a["email_verified"]:
+                self.send_account_link(a, "verify")
+            return self.send_json(200, {"ok": True})
+        if path == "/api/account/forgot":
+            email = str(self.read_json().get("email", "")).strip().lower()[:254]
+            if not RL_FORGOT.allow(ip) or not RL_FORGOT.allow("mail|" + email):
+                raise ApiError(429, "Trop de demandes, réessayez plus tard.")
+            a = DB_.account_by_email(email)
+            if a and not a["deleted_at"]:
+                self.send_account_link(a, "reset")
+                DB_.audit("account", "password_reset_requested", str(a["id"]))
+            # même réponse que le compte existe ou non : on ne révèle pas qui est inscrit
+            return self.send_json(200, {"ok": True})
+        if path == "/api/account/reset":
+            d = self.read_json()
+            token = str(d.get("token", ""))
+            if not security.TOKEN_RE.match(token):
+                raise ApiError(400, "Lien invalide ou expiré.")
+            problem = security.password_problem(d.get("password"))
+            if problem:
+                raise ApiError(422, problem)
+            aid = DB_.use_token("reset", security.token_hash(token))
+            if not aid:
+                raise ApiError(400, "Lien invalide ou expiré.")
+            DB_.set_password(aid, security.hash_password(d["password"]))
+            DB_.set_email_verified(aid)                       # le lien prouve l'accès à la boîte e-mail
+            DB_.audit("account", "password_reset_done", str(aid))
+            return self.send_json(200, {"ok": True}, {"Set-Cookie": self.session_cookie()})
+        if path == "/api/account/password":
+            a = self.require_account(None)
+            d = self.read_json()
+            if not security.verify_password(str(d.get("current", "")), a["pw_hash"]):
+                raise ApiError(401, "Mot de passe actuel incorrect.")
+            problem = security.password_problem(d.get("password"), a["email"])
+            if problem:
+                raise ApiError(422, problem)
+            DB_.set_password(a["id"], security.hash_password(d["password"]))
+            DB_.audit("account", "password_changed", str(a["id"]))
+            return self.send_json(200, {"ok": True}, {"Set-Cookie": self.session_cookie(a["id"])})
+        if path == "/api/account/delete":
+            a = self.require_account(None)
+            if not security.verify_password(str(self.read_json().get("password", "")), a["pw_hash"]):
+                raise ApiError(401, "Mot de passe incorrect.")
+            DB_.erase_account(a["id"])
+            DB_.audit("account", "account_erased", str(a["id"]))
+            return self.send_json(200, {"ok": True}, {"Set-Cookie": self.session_cookie()})
         raise ApiError(404, "Introuvable.")
+
+    def api_account_export(self, a):
+        """Droit d'accès et portabilité : toutes les données du compte, dans un format lisible par machine."""
+        out = {"compte": {k: a[k] for k in ("role", "email", "name", "company", "phone", "created_at", "terms_version")},
+               "export_du": time.strftime("%Y-%m-%d %H:%M:%S")}
+        if a["role"] == "shipper":
+            rows = DB_.bookings_for_account(a["id"], a["email"] if a["email_verified"] else None)
+            out["expeditions"] = [{"code": b["tracking_code"], "statut": b["status"], "cree_le": b["created_at"],
+                                   "prix_ht": b["customer_price_ht"], "contact": json.loads(b["customer"]),
+                                   "envoi": json.loads(b["shipment"])} for b in rows]
+        else:
+            c = DB_.carrier_row(a["carrier_id"]) or {}
+            out["transporteur"] = {k: c.get(k) for k in ("name", "siret", "licence_no", "insurance_until", "base_place",
+                                                          "modes", "equipment", "email", "phone", "status")}
+        DB_.audit("account", "data_export", str(a["id"]))
+        body = json.dumps(out, ensure_ascii=False, indent=2).encode()
+        self.send_bytes(200, "application/json; charset=utf-8", body,
+                        {"Content-Disposition": 'attachment; filename="mes-donnees-fretrau.json"'})
 
     # ---------- espace expéditeur ----------
     def api_my(self, method, path):
         acct = self.require_account("shipper")
-        mine = DB_.bookings_for_account(acct["id"])
+        mine = DB_.bookings_for_account(acct["id"], acct["email"] if acct["email_verified"] else None)
         if method == "GET" and path == "/api/my/bookings":
             out = []
             for b in mine:
@@ -738,7 +854,9 @@ class Handler(BaseHTTPRequestHandler):
             cid = DB_.add_carrier(source="candidature", name=ident["company"], siret=siret, **fields)
         aid = DB_.create_account("carrier", ident["email"], security.hash_password(pw), ident["name"],
                                  ident["company"], ident["phone"], carrier_id=cid)
-        DB_.audit("account", "carrier_application", f"carrier={cid}")
+        DB_.set_terms(aid, TERMS_VERSION)
+        self.send_account_link(DB_.account_by_id(aid), "verify")
+        DB_.audit("account", "carrier_application", f"carrier={cid} cgu={TERMS_VERSION}")
         self.send_json(201, {"ok": True, "role": "carrier"}, {"Set-Cookie": self.session_cookie(aid)})
 
     # ---------- admin ----------
@@ -873,7 +991,16 @@ class Handler(BaseHTTPRequestHandler):
                 "carriers": DB_.carrier_counts(), "alerts": len(DB_.list_alerts()),
                 "leads": sum(1 for x in DB_.list_leads() if x["status"] == "open"),
                 "revenue_ht": round(revenue, 2), "margin_ht": round(revenue - cost, 2),
-                "audit": DB_.audit_tail(20), "audit_intact": DB_.verify_audit_chain()[0]})
+                "audit": DB_.audit_tail(20), "audit_intact": DB_.verify_audit_chain()[0],
+                "db_intact": DB_.integrity_ok(), "last_backup": last_backup()})
+        if method == "POST" and path == "/api/admin/backup":
+            if not BACKUP_DIR:
+                raise ApiError(409, "Sauvegardes non configurées : définissez FRETRAU_BACKUP_DIR.")
+            name = run_backup()
+            if not name:
+                raise ApiError(500, "La sauvegarde a échoué.")
+            DB_.audit("admin", "backup", name)
+            return self.send_json(200, {"file": name})
         raise ApiError(404, "Introuvable.")
 
 
@@ -942,6 +1069,50 @@ def make_server(host="127.0.0.1", port=8080):
     return ThreadingHTTPServer((host, port), Handler)
 
 
+def last_backup():
+    """Nom et date de la dernière sauvegarde, ou None."""
+    try:
+        files = sorted(f for f in os.listdir(BACKUP_DIR) if f.startswith("fretrau-") and f.endswith(".db"))
+    except OSError:
+        return None
+    return files[-1] if files else None
+
+
+def run_backup():
+    """Sauvegarde vérifiée de la base dans FRETRAU_BACKUP_DIR ; conserve les BACKUP_KEEP plus récentes."""
+    try:
+        os.makedirs(BACKUP_DIR, mode=0o700, exist_ok=True)
+        name = time.strftime("fretrau-%Y%m%d-%H%M%S.db")
+        tmp = os.path.join(BACKUP_DIR, name + ".tmp")
+        if not DB_.backup_to(tmp):
+            os.remove(tmp)
+            return None
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, os.path.join(BACKUP_DIR, name))
+        files = sorted(f for f in os.listdir(BACKUP_DIR) if f.startswith("fretrau-") and f.endswith(".db"))
+        for old in files[:-BACKUP_KEEP]:
+            os.remove(os.path.join(BACKUP_DIR, old))
+        return name
+    except OSError:
+        return None
+
+
+def start_maintenance(interval_s: float = 6 * 3600):
+    """Toutes les 6 h : sauvegarde (si configurée) et purge des données périmées."""
+    def loop():
+        while True:
+            try:
+                if BACKUP_DIR and run_backup():
+                    DB_.audit("system", "backup", last_backup() or "")
+                purged = DB_.purge()
+                if any(purged.values()):
+                    DB_.audit("system", "purge", json.dumps(purged))
+            except Exception:
+                pass
+            time.sleep(interval_s)
+    threading.Thread(target=loop, daemon=True).start()
+
+
 def start_watch(interval_s: float):
     """Lance l'agent de surveillance en tâche de fond (relances d'offres, retards, assurances)."""
     def loop():
@@ -964,4 +1135,7 @@ if __name__ == "__main__":
     _watch = float(os.environ.get("FRETRAU_WATCH_SECONDS", "300"))
     if _watch > 0:
         start_watch(_watch)
+    start_maintenance()
+    if not BACKUP_DIR:
+        print("[FRETRAU] ATTENTION : aucune sauvegarde automatique. Définissez FRETRAU_BACKUP_DIR (idéalement un autre disque).")
     make_server(host, port).serve_forever()

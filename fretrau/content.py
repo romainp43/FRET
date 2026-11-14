@@ -150,8 +150,10 @@ def footer() -> str:
             '<a href="/clients">Clients</a><a href="/transporteur.html">Transporteurs</a><a href="/contact">Contact</a></div>'
             f'<div><b>Transports</b><a href="/tarifs">Vérificateur de tarif</a>{freight}</div>'
             '<div><b>Accès</b><a href="/suivi">Suivre un envoi</a><a href="/portail.html">Espace client</a>'
-            '<a href="/transporteur.html">Espace transporteur</a></div></div>'
-            f'<div class="wrap legal">{legal}</div></footer>')
+            '<a href="/transporteur.html">Espace transporteur</a><a href="/compte">Mon compte</a></div></div>'
+            f'<div class="wrap legal">{legal}<span class="legal-links"><a href="/mentions-legales">Mentions légales</a>'
+            '<a href="/cgu">Conditions d\'utilisation</a><a href="/cgv">Conditions de vente</a>'
+            '<a href="/confidentialite">Confidentialité</a></span></div></footer>')
 
 
 def layout(title: str, description: str, body: str, scripts=()) -> str:

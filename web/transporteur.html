@@ -46,6 +46,7 @@
               <div><label for="a-email">E-mail</label><input id="a-email" type="email" autocomplete="email" required></div>
               <div><label for="a-pw">Mot de passe (10 caractères min.)</label><input id="a-pw" type="password" autocomplete="new-password" minlength="10" required></div>
             </div>
+            <label class="checks"><input type="checkbox" id="a-terms"> J'accepte les <a href="/cgu" target="_blank" rel="noopener">conditions d'utilisation</a> et la <a href="/confidentialite" target="_blank" rel="noopener">politique de confidentialité</a></label>
             <button class="full" type="submit">Envoyer mon dossier</button>
             <p class="muted small">Votre dossier est contrôlé par notre équipe (licence, assurance, Kbis, attestation de vigilance) avant toute attribution de chargement.</p>
             <div id="apply-error" class="err hidden" role="alert"></div>
@@ -57,6 +58,7 @@
             <label for="l-email">E-mail</label><input id="l-email" type="email" autocomplete="email" required>
             <label for="l-pw">Mot de passe</label><input id="l-pw" type="password" autocomplete="current-password" required>
             <button class="full" type="submit">Se connecter</button>
+            <p class="small"><a href="/compte">Mot de passe oublié ?</a></p>
             <div id="login-error" class="err hidden" role="alert"></div>
           </form>
         </div>
@@ -64,7 +66,7 @@
     </section>
 
     <section id="dash" class="hidden">
-      <div class="page-head"><div><h1>Espace transporteur</h1><p class="muted" id="who"></p></div></div>
+      <div class="page-head"><div><h1>Espace transporteur</h1><p class="muted" id="who"></p></div><div class="actions"><a href="/compte">Mon compte</a><a href="#" id="logout">Se déconnecter</a></div></div>
       <div id="banner"></div>
       <h2>Chargements proposés</h2>
       <div id="loads" class="stack"></div>

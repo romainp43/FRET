@@ -39,8 +39,9 @@ def _resource(db, b, base_url, now):
     """Vague suivante d'offres pour une réservation restée sans accord."""
     existing = db.offers_for_booking(b["id"])
     last = max((o["created_at"] for o in existing), default=b["created_at"])
-    if now - last < offer_wait_s():
-        return None
+    waiting = any(o["status"] in ("sent", "countered") for o in existing)
+    if waiting and now - last < offer_wait_s():
+        return None                                # des transporteurs n'ont pas encore répondu : on patiente
     stored = db.get_quote(b["quote_id"], max_age_s=90 * 86400)
     waves = -(-len(existing) // WAVE_SIZE)
     if not stored or waves >= MAX_WAVES:

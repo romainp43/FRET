@@ -46,7 +46,9 @@ async function load() {
     tile("À traiter (humain)", stats.pending_human), tile("Transporteurs vérifiés", stats.carriers.verified || 0),
     tile("Chiffre d'affaires HT", eur(stats.revenue_ht)), tile("Marge brute HT", eur(stats.margin_ht)),
     tile("Alertes ouvertes", stats.alerts), tile("Demandes de contact", stats.leads),
-    tile("Intégrité du journal", stats.audit_intact ? "Intacte" : "ALTÉRÉE"));
+    tile("Intégrité du journal", stats.audit_intact ? "Intacte" : "ALTÉRÉE"),
+    tile("Intégrité de la base", stats.db_intact ? "Intacte" : "À VÉRIFIER"),
+    tile("Dernière sauvegarde", stats.last_backup ? stats.last_backup.replace("fretrau-", "").replace(".db", "") : "AUCUNE"));
   const mails = await api("/api/admin/outbox");
   $("outbox").replaceChildren(...mails.mails.map((m) =>
     el("tr", {}, el("td", {}, new Date(m.created_at * 1000).toLocaleString("fr-FR")), el("td", {}, m.to_addr), el("td", {}, m.subject), el("td", {}, m.status))));

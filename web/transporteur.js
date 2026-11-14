@@ -18,7 +18,6 @@ async function start() {
   if (account && account.role === "shipper") { location.href = "/portail.html"; return; }
   if (!account) { $("auth").classList.remove("hidden"); return; }
   $("dash").classList.remove("hidden");
-  $("logout").classList.remove("hidden");
   $("who").textContent = `${account.company} — ${account.name}`;
   await refresh();
 }
@@ -95,7 +94,7 @@ onSubmit("apply-form", "apply-error", async (form) => {
     company: $("a-company").value, siret: $("a-siret").value, licence_no: $("a-licence").value,
     insurance_until: $("a-insurance").value, postcode: $("a-postcode").value.trim(), equipment: $("a-equipment").value,
     modes, europe: $("a-europe").checked, name: $("a-name").value, phone: $("a-phone").value,
-    email: $("a-email").value, password: $("a-pw").value, website: form.querySelector("[name=website]").value,
+    email: $("a-email").value, password: $("a-pw").value, accept_terms: $("a-terms").checked, website: form.querySelector("[name=website]").value,
   });
   location.reload();
 });
