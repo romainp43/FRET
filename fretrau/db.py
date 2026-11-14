@@ -74,6 +74,18 @@ CREATE TABLE IF NOT EXISTS inbound_quotes (
     id INTEGER PRIMARY KEY AUTOINCREMENT, received_at REAL NOT NULL, from_addr TEXT NOT NULL, raw TEXT NOT NULL,
     quote_id TEXT, status TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER NOT NULL, kind TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL,
+    expires_at REAL NOT NULL, used INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, created_at REAL NOT NULL, topic TEXT NOT NULL, name TEXT NOT NULL,
+    company TEXT NOT NULL, email TEXT NOT NULL, phone TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, created_at REAL NOT NULL, kind TEXT NOT NULL, ref TEXT NOT NULL,
+    detail TEXT NOT NULL, status TEXT NOT NULL, UNIQUE(kind, ref)
+);
 """
 CARRIER_ID_BASE = 1000      # les identifiants 1 à 999 sont réservés au réseau de démonstration
 
@@ -84,13 +96,26 @@ def _audit_hash(prev, ts, actor, action, detail):
 
 class DB:
     def __init__(self, path=":memory:"):
+        self.path = path
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         with _lock:
+            if path != ":memory:":
+                # Journal WAL + synchronisation complète : une coupure de courant ne corrompt pas la base
+                # et ne perd aucune écriture déjà confirmée.
+                self.conn.execute("PRAGMA journal_mode=WAL")
+                self.conn.execute("PRAGMA synchronous=FULL")
             self.conn.executescript(SCHEMA)
             cols = [r["name"] for r in self.conn.execute("PRAGMA table_info(bookings)")]
             if "account_id" not in cols:                       # base créée par une version antérieure
                 self.conn.execute("ALTER TABLE bookings ADD COLUMN account_id INTEGER")
+            acols = [r["name"] for r in self.conn.execute("PRAGMA table_info(accounts)")]
+            for col, ddl in (("email_verified", "INTEGER NOT NULL DEFAULT 0"), ("session_version", "INTEGER NOT NULL DEFAULT 0"),
+                             ("terms_version", "TEXT"), ("deleted_at", "REAL")):
+                if col not in acols:
+                    self.conn.execute(f"ALTER TABLE accounts ADD COLUMN {col} {ddl}")
+            if "vetting" not in [r["name"] for r in self.conn.execute("PRAGMA table_info(carriers)")]:
+                self.conn.execute("ALTER TABLE carriers ADD COLUMN vetting TEXT")
             if not self.conn.execute("SELECT 1 FROM sqlite_sequence WHERE name='carriers'").fetchone():
                 self.conn.execute("INSERT INTO sqlite_sequence(name, seq) VALUES ('carriers', ?)", (CARRIER_ID_BASE,))
             self.conn.commit()
@@ -238,10 +263,88 @@ class DB:
         rows = self._all("SELECT * FROM accounts WHERE id=?", (aid,))
         return rows[0] if rows else None
 
-    def bookings_for_account(self, account_id):
-        """Réservations passées en étant connecté. Aucun rattachement par adresse e-mail : tant que les adresses
-        ne sont pas vérifiées, cela exposerait les envois d'un tiers à quiconque s'inscrit avec son adresse."""
-        return self._all("SELECT * FROM bookings WHERE account_id=? ORDER BY id DESC LIMIT 500", (account_id,))
+    def bookings_for_account(self, account_id, verified_email=None):
+        """Réservations passées en étant connecté, plus celles passées sans compte avec la même adresse e-mail
+        UNIQUEMENT si cette adresse a été vérifiée (sinon n'importe qui pourrait lire les envois d'un tiers)."""
+        rows = self._all("SELECT * FROM bookings WHERE account_id=? ORDER BY id DESC LIMIT 500", (account_id,))
+        if verified_email:
+            guests = self._all("SELECT * FROM bookings WHERE account_id IS NULL ORDER BY id DESC LIMIT 2000")
+            rows += [r for r in guests if json.loads(r["customer"]).get("email", "").lower() == verified_email]
+            rows.sort(key=lambda r: r["id"], reverse=True)
+        return rows
+
+    # ---- sécurité des comptes : jetons à usage unique (stockés hachés), mots de passe, suppression ----
+    def add_token(self, account_id, kind, token_hash, ttl_s):
+        self._exec("UPDATE tokens SET used=1 WHERE account_id=? AND kind=? AND used=0", (account_id, kind))
+        self._exec("INSERT INTO tokens(account_id, kind, token_hash, expires_at) VALUES (?,?,?,?)",
+                   (account_id, kind, token_hash, time.time() + ttl_s))
+
+    def use_token(self, kind, token_hash):
+        """Consomme le jeton et retourne l'identifiant du compte, ou None (inconnu, expiré, déjà utilisé)."""
+        with _lock:
+            row = self.conn.execute("SELECT * FROM tokens WHERE token_hash=? AND kind=? AND used=0 AND expires_at>?",
+                                    (token_hash, kind, time.time())).fetchone()
+            if not row:
+                return None
+            self.conn.execute("UPDATE tokens SET used=1 WHERE id=?", (row["id"],))
+            self.conn.commit()
+            return row["account_id"]
+
+    def set_email_verified(self, account_id):
+        self._exec("UPDATE accounts SET email_verified=1 WHERE id=?", (account_id,))
+
+    def set_password(self, account_id, pw_hash):
+        """Change le mot de passe et invalide toutes les sessions ouvertes."""
+        self._exec("UPDATE accounts SET pw_hash=?, session_version=session_version+1 WHERE id=?", (pw_hash, account_id))
+        self._exec("UPDATE tokens SET used=1 WHERE account_id=?", (account_id,))
+
+    def set_terms(self, account_id, version):
+        self._exec("UPDATE accounts SET terms_version=? WHERE id=?", (version, account_id))
+
+    def erase_account(self, account_id):
+        """Droit à l'effacement : retire les données personnelles, conserve les pièces comptables (obligation légale)."""
+        a = self.account_by_id(account_id)
+        if not a:
+            return False
+        anon = json.dumps({"name": "ANONYMISÉ", "company": a["company"], "email": "anonymise@invalid", "phone": "0"})
+        for b in self._all("SELECT id, shipment FROM bookings WHERE account_id=?", (account_id,)):
+            s = json.loads(b["shipment"])
+            for k in ("pickup_address", "delivery_address"):
+                s[k] = "ANONYMISÉ"
+            self._exec("UPDATE bookings SET customer=?, shipment=? WHERE id=?", (anon, json.dumps(s), b["id"]))
+        self._exec("DELETE FROM outbox WHERE to_addr=?", (a["email"],))
+        self._exec("DELETE FROM tokens WHERE account_id=?", (account_id,))
+        if a["carrier_id"]:
+            self._exec("UPDATE carriers SET status='blocked', email=NULL, phone=NULL, note='Compte supprimé à la demande' "
+                       "WHERE id=?", (a["carrier_id"],))
+        self._exec("UPDATE accounts SET email=?, name='ANONYMISÉ', phone='0', pw_hash='!', deleted_at=?, "
+                   "session_version=session_version+1 WHERE id=?", (f"supprime-{account_id}@invalid", time.time(), account_id))
+        return True
+
+    # ---- sauvegardes et intégrité ----
+    def backup_to(self, dest_path):
+        """Copie cohérente de la base, même pendant que le site est utilisé (API de sauvegarde SQLite)."""
+        dest = sqlite3.connect(dest_path)
+        try:
+            with _lock:
+                self.conn.backup(dest)
+            ok = dest.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        finally:
+            dest.close()
+        return ok
+
+    def integrity_ok(self):
+        with _lock:
+            return self.conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+
+    def purge(self, quotes_days=90, inbound_days=365):
+        """Minimisation des données : supprime les devis non réservés et les e-mails bruts trop anciens."""
+        now = time.time()
+        a = self._exec("DELETE FROM quotes WHERE created_at<? AND id NOT IN (SELECT quote_id FROM bookings)",
+                       (now - quotes_days * 86400,)).rowcount
+        b = self._exec("DELETE FROM inbound_quotes WHERE received_at<?", (now - inbound_days * 86400,)).rowcount
+        c = self._exec("DELETE FROM tokens WHERE expires_at<? OR used=1", (now - 86400,)).rowcount
+        return {"quotes": a, "inbound_quotes": b, "tokens": c}
 
     # ---- transporteurs réels (prospects, candidats, vérifiés) ----
     def add_carrier(self, **c):
@@ -289,7 +392,7 @@ class DB:
 
     def update_carrier(self, cid, **fields):
         allowed = {"status", "licence_no", "insurance_until", "email", "phone", "modes", "europe", "equipment",
-                   "note", "verified_at", "base_place", "name"}
+                   "note", "verified_at", "base_place", "name", "vetting"}
         sets = [(k, v) for k, v in fields.items() if k in allowed]
         if not sets:
             return False
@@ -383,3 +486,25 @@ class DB:
     def list_inbound_quotes(self, limit=30):
         return self._all("SELECT id, received_at, from_addr, quote_id, status FROM inbound_quotes ORDER BY id DESC LIMIT ?",
                          (limit,))
+
+    # ---- demandes de contact et de devis sur mesure ----
+    def add_lead(self, topic, name, company, email, phone, message):
+        self._exec("INSERT INTO leads(created_at, topic, name, company, email, phone, message, status) "
+                   "VALUES (?,?,?,?,?,?,?, 'open')", (time.time(), topic, name, company, email, phone, message))
+
+    def list_leads(self, limit=100):
+        return self._all("SELECT * FROM leads ORDER BY id DESC LIMIT ?", (limit,))
+
+    def close_lead(self, lead_id):
+        return self._exec("UPDATE leads SET status='done' WHERE id=? AND status='open'", (lead_id,)).rowcount > 0
+
+    # ---- alertes de l'agent de surveillance (une seule par motif et par dossier) ----
+    def add_alert(self, kind, ref, detail):
+        return self._exec("INSERT OR IGNORE INTO alerts(created_at, kind, ref, detail, status) VALUES (?,?,?,?, 'open')",
+                          (time.time(), kind, str(ref), detail[:300])).rowcount > 0
+
+    def list_alerts(self, status="open", limit=100):
+        return self._all("SELECT * FROM alerts WHERE status=? ORDER BY id DESC LIMIT ?", (status, limit))
+
+    def close_alert(self, alert_id):
+        return self._exec("UPDATE alerts SET status='done' WHERE id=? AND status='open'", (alert_id,)).rowcount > 0

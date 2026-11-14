@@ -8,12 +8,7 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header class="top">
-    <div class="wrap">
-      <a class="brand" href="/">FRET<b>RAU</b></a>
-      <nav><a href="#comment">Comment ça marche</a><a href="#suivi">Suivre un envoi</a><a href="/transporteur.html">Transporteurs</a><a href="/portail.html">Espace client</a></nav>
-    </div>
-  </header>
+  <!--HEADER-->
 
   <main>
     <section class="hero">
@@ -24,7 +19,7 @@
           <p class="lead hidden" id="mail-quote">Vous préférez écrire ? Envoyez votre demande telle quelle à <b id="mail-quote-addr"></b> : le prix vous revient par e-mail.</p>
           <div class="badges">
             <span class="badge">Prix instantané</span><span class="badge">Transporteurs contrôlés</span>
-            <span class="badge">Suivi en temps réel</span><span class="badge">France + Europe</span>
+            <span class="badge">Prix ferme</span><span class="badge">Suivi à chaque étape</span><span class="badge">France + Europe</span>
           </div>
         </div>
 
@@ -41,15 +36,19 @@
               <div><label for="destination">Arrivée</label><input id="destination" list="cities" autocomplete="off" required placeholder="Code postal ou ville"></div>
             </div>
             <datalist id="cities"></datalist>
-            <div class="row">
-              <div><label for="pallets" id="pallets-label">Palettes (facultatif)</label><input id="pallets" type="number" min="1" max="33" inputmode="numeric"></div>
-              <div><label for="weight">Poids total (kg)</label><input id="weight" type="number" min="1" max="24000" required inputmode="numeric"></div>
-            </div>
-            <label for="pickup">Date d'enlèvement</label>
-            <input id="pickup" type="date" required>
-            <label>Options</label>
-            <div class="checks" id="options"></div>
-            <button class="full" type="submit" id="quote-btn">Calculer mon prix</button>
+            <details id="more">
+              <summary>Préciser mon envoi : palettes, poids, date, options</summary>
+              <div class="row">
+                <div><label for="pallets" id="pallets-label">Palettes</label><input id="pallets" type="number" min="1" max="33" inputmode="numeric"></div>
+                <div><label for="weight">Poids total (kg)</label><input id="weight" type="number" min="1" max="24000" inputmode="numeric"></div>
+              </div>
+              <label for="pickup">Date d'enlèvement</label>
+              <input id="pickup" type="date" required>
+              <label>Options</label>
+              <div class="checks" id="options"></div>
+            </details>
+            <button class="full" type="submit" id="quote-btn">Voir mon prix</button>
+            <p class="muted small">Deux codes postaux suffisent pour un premier prix.</p>
             <div id="quote-error" class="err hidden" role="alert"></div>
           </form>
         </div>
@@ -73,8 +72,13 @@
             </div>
             <label for="pickup-address">Adresse d'enlèvement</label><input id="pickup-address" required>
             <label for="delivery-address">Adresse de livraison</label><input id="delivery-address" required>
+            <div class="row">
+              <div><label for="pickup-window">Créneau d'enlèvement</label><select id="pickup-window"></select></div>
+              <div><label for="delivery-window">Créneau de livraison</label><select id="delivery-window"></select></div>
+            </div>
             <label for="goods">Marchandise</label><input id="goods" required placeholder="Ex. palettes de carrelage">
-            <label class="checks"><input type="checkbox" id="cgv"> J'accepte les conditions générales de vente</label>
+            <label class="checks"><input type="checkbox" id="cgv"> J'accepte les <a href="/cgv" target="_blank" rel="noopener">conditions générales de vente</a></label>
+            <p class="muted small">Vos données servent à organiser ce transport. <a href="/confidentialite" target="_blank" rel="noopener">En savoir plus</a></p>
             <button class="full" type="submit" id="book-btn">Confirmer la réservation</button>
             <div id="book-error" class="err hidden" role="alert"></div>
           </form>
@@ -93,6 +97,21 @@
       </div>
     </section>
 
+    <section class="block alt">
+      <div class="wrap">
+        <h2>Ce qui change par rapport à un affréteur classique</h2>
+        <div class="steps">
+          <div class="card"><h3>Un prix en quelques secondes</h3><p class="muted">Sur le site ou par e-mail, sans attendre qu'on vous rappelle.</p></div>
+          <div class="card"><h3>Le prix réservé est le prix payé</h3><p class="muted">Pas de hausse après coup tant que l'envoi correspond à votre demande.</p></div>
+          <div class="card"><h3>Un prix inférieur ailleurs ?</h3><p class="muted">Transmettez-le depuis votre espace client : un conseiller étudie un alignement.</p></div>
+          <div class="card"><h3>Transporteurs contrôlés</h3><p class="muted">Entreprise, licence, assurance : rien n'est confié sans contrôle.</p></div>
+          <div class="card"><h3>Suivi de bout en bout</h3><p class="muted">Un message à chaque étape, et les retards signalés avant que vous ne les découvriez.</p></div>
+          <div class="card"><h3>Une équipe derrière l'outil</h3><p class="muted">Les agents automatiques traitent le courant, un conseiller reprend le reste.</p></div>
+        </div>
+        <p class="center"><a class="btn" href="/solutions">Voir les solutions</a></p>
+      </div>
+    </section>
+
     <section class="block" id="suivi">
       <div class="wrap">
         <div class="card">
@@ -107,8 +126,7 @@
       </div>
     </section>
   </main>
-
-  <footer><div class="wrap">FRETRAU — projet de démonstration. Mentions légales, CGV et politique de confidentialité à compléter avant mise en ligne.</div></footer>
+  <!--FOOTER-->
   <script src="/app.js"></script>
 </body>
 </html>

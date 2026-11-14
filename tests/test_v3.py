@@ -15,6 +15,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 os.environ.setdefault("FRETRAU_DB", ":memory:")
 os.environ.setdefault("FRETRAU_ADMIN_PASSWORD", "mot-de-passe-de-test-long")
+os.environ["FRETRAU_VETTING"] = "0"
 os.environ["FRETRAU_WEBHOOK_SECRET"] = "secret-webhook-de-test"
 
 from fretrau import geo, market, offers, pricing, registry, security  # noqa: E402
@@ -189,7 +190,7 @@ class TestPortals(unittest.TestCase):
         s, r, h = self.call("POST", "/api/carrier/apply", {
             "company": "Transports " + email.split("@")[0], "siret": siret, "licence_no": "2024/84/0001234",
             "insurance_until": INSURED, "postcode": "43200", "equipment": "2 tautliners", "modes": ["FTL", "LTL"],
-            "europe": False, "name": "Paul", "phone": "0611111111", "email": email, "password": "motdepasse-long"})
+            "europe": False, "name": "Paul", "phone": "0611111111", "email": email, "password": "Velay-fret-2026", "accept_terms": True})
         self.assertEqual(s, 201, r)
         cookie = self.cookie_of(h)
         cid = self.server.DB_.account_by_email(email)["carrier_id"]
@@ -209,7 +210,7 @@ class TestPortals(unittest.TestCase):
 
     def test_shipper_account_and_isolation(self):
         body = {"name": "Claire", "company": "Client SAS", "email": "claire@exemple.fr", "phone": "0600000000",
-                "password": "motdepasse-long"}
+                "password": "Velay-fret-2026", "accept_terms": True}
         s, _, h = self.call("POST", "/api/account/signup", body)
         self.assertEqual(s, 201)
         cookie = self.cookie_of(h)
@@ -240,7 +241,7 @@ class TestPortals(unittest.TestCase):
         self.assertEqual(self.call("POST", "/api/carrier/apply", {
             "company": "X", "siret": "11111111111111", "licence_no": "L", "insurance_until": INSURED, "postcode": "43200",
             "modes": ["FTL"], "name": "P", "phone": "0611111111", "email": "x@exemple.fr",
-            "password": "motdepasse-long"})[0], 422)                                         # SIRET invalide
+            "password": "Velay-fret-2026", "accept_terms": True})[0], 422)                                         # SIRET invalide
         cookie, cid = self.new_carrier("attente@exemple.fr", "55210055400013", verify=False)
         s, loads, _ = self.call("GET", "/api/carrier/loads", cookie=cookie)
         self.assertEqual((loads["status"], loads["loads"]), ("pending_review", []))

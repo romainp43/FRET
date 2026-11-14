@@ -5,7 +5,8 @@ const $ = (id) => document.getElementById(id);
 const eur = (n) => (n == null ? "—" : new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(n));
 const frDate = (iso) => (iso ? new Date(iso + "T12:00:00").toLocaleDateString("fr-FR") : "—");
 const MODES = { FTL: "Camion complet", PTL: "Lot partiel", LTL: "Palettes" };
-const OPTION_LABELS = { adr: "ADR", tail_lift: "Hayon", temperature: "Température dirigée", urgent: "Express", flatbed: "Plateau" };
+const OPTION_LABELS = { adr: "ADR", tail_lift: "Hayon", temperature: "Température dirigée", urgent: "Express", flatbed: "Plateau",
+  appointment: "Sur rendez-vous", residential: "Chez un particulier" };
 
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);

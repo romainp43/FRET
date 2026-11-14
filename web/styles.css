@@ -118,3 +118,59 @@ main.page .card h2 { margin-top: 0; }
 .table-scroll { overflow-x: auto; }
 .inline-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; align-items: end; margin-top: 10px; }
 textarea { min-height: 110px; resize: vertical; }
+
+/* pages de contenu */
+header.top .wrap { gap: 16px; }
+nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+nav a.nav-cta { background: var(--accent); color: #fff; padding: 7px 14px; border-radius: 9px; font-weight: 700; }
+.hero.sub { padding: 48px 0 56px; }
+.hero.sub .grid { align-items: center; }
+section.block.alt { background: #fff; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.wrap.narrow { max-width: 760px; }
+.wrap.two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+.steps { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.center { text-align: center; margin-top: 26px; }
+.card.link { text-decoration: none; display: block; transition: border-color .15s; }
+.card.link:hover { border-color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 10px; }
+.chip { background: #eef2f6; border: 1px solid var(--line); border-radius: 99px; padding: 7px 14px; font-size: 14px; color: var(--ink); text-decoration: none; }
+a.chip:hover { border-color: var(--accent); }
+ul.ticks { list-style: none; padding: 0; margin: 0; }
+ul.ticks li { padding: 8px 0 8px 28px; position: relative; border-bottom: 1px dashed var(--line); }
+ul.ticks li::before { content: "✓"; position: absolute; left: 2px; color: var(--ok); font-weight: 800; }
+.faq details { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; }
+.faq summary { font-weight: 700; cursor: pointer; }
+.faq p { margin: 10px 0 0; color: var(--muted); }
+details#more { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+details#more summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.card.rate { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.rate-price { text-align: right; }
+.rate-price .price { font-size: 28px; }
+footer .foot { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 28px; padding-bottom: 22px; }
+footer .foot div { display: flex; flex-direction: column; gap: 7px; }
+footer .foot b { color: #fff; margin-bottom: 4px; }
+footer a { color: #9fb0c1; text-decoration: none; }
+footer a:hover { color: #fff; }
+footer .legal { border-top: 1px solid rgba(255, 255, 255, .12); padding-top: 16px; font-size: 13px; }
+.report { border-left: 4px solid var(--line); padding: 8px 14px; margin: 12px 0; background: #f8fafc; border-radius: 0 10px 10px 0; }
+.report.ok { border-color: var(--ok); } .report.warning { border-color: var(--warn); } .report.refused { border-color: var(--bad); }
+.report p { margin: 4px 0; font-size: 14px; }
+@media (max-width: 860px) {
+  .wrap.two, footer .foot { grid-template-columns: 1fr; }
+  header.top .wrap { height: auto; padding-top: 10px; padding-bottom: 10px; flex-direction: column; align-items: flex-start; }
+  nav { justify-content: flex-start; }
+  nav a { margin: 4px 14px 4px 0; }
+}
+
+/* pages légales et compte */
+.legal-doc h2 { margin-top: 34px; font-size: 20px; }
+.legal-doc p, .legal-doc li { color: #2b3d50; }
+.legal-doc mark { background: #fff4c2; padding: 1px 4px; border-radius: 4px; }
+.legal-doc ol.toc { columns: 2; padding-left: 20px; font-size: 14px; }
+.legal-doc table.data td, .legal-doc table.data th { vertical-align: top; }
+footer .legal { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between; }
+footer .legal-links { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+button.danger { background: var(--bad); }
+button.danger:hover { background: #8f1c13; }
+.checks a { font-weight: 600; }
+@media (max-width: 860px) { .legal-doc ol.toc { columns: 1; } }

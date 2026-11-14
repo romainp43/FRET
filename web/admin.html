@@ -24,6 +24,11 @@
 
     <section id="dash" class="hidden">
       <div class="tiles" id="tiles"></div>
+      <h2>Alertes et demandes</h2>
+      <div class="toolbar"><button type="button" class="ghost" id="watch-run">Lancer l'agent de surveillance maintenant</button><span class="muted" id="watch-out"></span></div>
+      <table class="data"><thead><tr><th>Date</th><th>Motif</th><th>Dossier</th><th>Détail</th><th></th></tr></thead><tbody id="alerts"></tbody></table>
+      <table class="data"><thead><tr><th>Date</th><th>Objet</th><th>Contact</th><th>Message</th><th></th></tr></thead><tbody id="leads"></tbody></table>
+
       <h2>Réservations</h2>
       <table class="data"><thead><tr><th>#</th><th>Code</th><th>Trajet</th><th>Statut</th><th>Transporteur</th><th>Prix client HT</th><th>Achat HT</th></tr></thead><tbody id="rows"></tbody></table>
       <div id="detail" class="card hidden"></div>

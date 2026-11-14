@@ -18,7 +18,6 @@ async function start() {
   if (account && account.role === "shipper") { location.href = "/portail.html"; return; }
   if (!account) { $("auth").classList.remove("hidden"); return; }
   $("dash").classList.remove("hidden");
-  $("logout").classList.remove("hidden");
   $("who").textContent = `${account.company} — ${account.name}`;
   await refresh();
 }
@@ -68,7 +67,7 @@ function myCard(l) {
   const box = el("div", { class: "card" },
     el("h3", {}, `${l.origin} → ${l.destination} — ${eur(l.price)} HT`),
     el("p", { class: "muted" }, `${l.code} · ${describe(l)}`),
-    el("p", {}, `Enlèvement : ${l.pickup_address}`), el("p", {}, `Livraison : ${l.delivery_address}`),
+    el("p", {}, `Enlèvement : ${l.pickup_address} — ${l.pickup_window}`), el("p", {}, `Livraison : ${l.delivery_address} — ${l.delivery_window}`),
     el("p", {}, `Marchandise : ${l.goods} — contact : ${l.contact}`));
   if (!next) { box.append(el("div", { class: "ok-box" }, "Livraison enregistrée. Règlement à 30 jours.")); return box; }
   const who = el("input", { placeholder: "Nom du réceptionnaire", "aria-label": "Nom du réceptionnaire" });
@@ -95,7 +94,7 @@ onSubmit("apply-form", "apply-error", async (form) => {
     company: $("a-company").value, siret: $("a-siret").value, licence_no: $("a-licence").value,
     insurance_until: $("a-insurance").value, postcode: $("a-postcode").value.trim(), equipment: $("a-equipment").value,
     modes, europe: $("a-europe").checked, name: $("a-name").value, phone: $("a-phone").value,
-    email: $("a-email").value, password: $("a-pw").value, website: form.querySelector("[name=website]").value,
+    email: $("a-email").value, password: $("a-pw").value, accept_terms: $("a-terms").checked, website: form.querySelector("[name=website]").value,
   });
   location.reload();
 });

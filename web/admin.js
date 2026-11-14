@@ -31,6 +31,9 @@ $("login-form").addEventListener("submit", async (e) => {
 
 const STATUS = { confirmed: "Confirmée", sourcing: "Recherche transporteur", pending_human: "À traiter" };
 const CSTATUS = { prospect: "Prospect", pending_review: "À contrôler", verified: "Vérifié", blocked: "Exclu" };
+const VSTATUS = { ok: "conforme", warning: "points à vérifier", refused: "entreprise fermée", unavailable: "non réalisé" };
+const ALERTS = { no_carrier: "Aucun transporteur", late_pickup: "Enlèvement en retard", late_delivery: "Livraison en retard", insurance: "Assurance à échéance" };
+const TOPICS = { rappel: "Rappel", devis: "Devis sur mesure", transporteur: "Transporteur", autre: "Autre" };
 const when = (ts) => new Date(ts * 1000).toLocaleString("fr-FR");
 
 async function load() {
@@ -42,7 +45,10 @@ async function load() {
     tile("Réservations", stats.bookings), tile("Confirmées", stats.confirmed), tile("Recherche transporteur", stats.sourcing),
     tile("À traiter (humain)", stats.pending_human), tile("Transporteurs vérifiés", stats.carriers.verified || 0),
     tile("Chiffre d'affaires HT", eur(stats.revenue_ht)), tile("Marge brute HT", eur(stats.margin_ht)),
-    tile("Intégrité du journal", stats.audit_intact ? "Intacte" : "ALTÉRÉE"));
+    tile("Alertes ouvertes", stats.alerts), tile("Demandes de contact", stats.leads),
+    tile("Intégrité du journal", stats.audit_intact ? "Intacte" : "ALTÉRÉE"),
+    tile("Intégrité de la base", stats.db_intact ? "Intacte" : "À VÉRIFIER"),
+    tile("Dernière sauvegarde", stats.last_backup ? stats.last_backup.replace("fretrau-", "").replace(".db", "") : "AUCUNE"));
   const mails = await api("/api/admin/outbox");
   $("outbox").replaceChildren(...mails.mails.map((m) =>
     el("tr", {}, el("td", {}, new Date(m.created_at * 1000).toLocaleString("fr-FR")), el("td", {}, m.to_addr), el("td", {}, m.subject), el("td", {}, m.status))));
@@ -54,7 +60,7 @@ async function load() {
     tr.addEventListener("click", () => detail(b.id));
     return tr;
   }));
-  await Promise.all([loadCarriers(), loadMoney()]);
+  await Promise.all([loadCarriers(), loadMoney(), loadInbox()]);
   $("audit").replaceChildren(...stats.audit.map((a) =>
     el("tr", {}, el("td", {}, new Date(a.ts * 1000).toLocaleString("fr-FR")), el("td", {}, a.actor), el("td", {}, a.action), el("td", {}, a.detail || ""))));
 }
@@ -152,12 +158,26 @@ function editCarrier(r) {
     } catch (ex) { out.replaceChildren(el("div", { class: "err" }, ex.message)); }
   };
   const btn = (label, status, cls) => { const b = el("button", { type: "button", class: cls || "" }, label); b.addEventListener("click", () => save(status)); return b; };
+  const reportBox = el("div", {});
+  const showReport = (v) => {
+    const recheck = el("button", { type: "button", class: "ghost" }, "Relancer le contrôle automatique");
+    recheck.addEventListener("click", async () => {
+      try { showReport(await api("/api/admin/carrier/recheck", { id: r.id })); }
+      catch (ex) { out.replaceChildren(el("div", { class: "err" }, ex.message)); }
+    });
+    reportBox.replaceChildren(el("div", { class: "report " + (v ? v.status : "") },
+      el("p", {}, el("b", {}, "Contrôle automatique (Annuaire des Entreprises) : "), v ? VSTATUS[v.status] || v.status : "jamais lancé"),
+      ...(v ? v.findings.map((f) => el("p", {}, f)) : []),
+      v && v.checked_at ? el("p", { class: "muted" }, "Contrôlé le " + when(v.checked_at)) : ""), recheck);
+  };
+  showReport(r.vetting);
   box.classList.remove("hidden");
   box.replaceChildren(
     el("h2", {}, `${r.name} (n° ${r.id})`),
     el("p", { class: "muted" }, `SIRET ${r.siret || "—"} · base ${r.base_place} · ${r.modes}${r.europe ? " · international" : ""} · ${r.equipment || "matériel non renseigné"}`),
     el("div", { class: "inline-form" }, field("N° de licence", "e-licence", r.licence_no), field("Assurance valable jusqu'au", "e-insurance", r.insurance_until, "date"),
       field("E-mail", "e-email", r.email, "email"), field("Téléphone", "e-phone", r.phone), field("Note interne", "e-note", r.note)),
+    reportBox,
     el("label", { class: "checks" }, checks, " J'ai contrôlé les pièces : licence, attestation d'assurance, Kbis, attestation de vigilance URSSAF"),
     el("div", { class: "actions" }, btn("Valider le transporteur", "verified"), btn("Enregistrer sans changer le statut", undefined, "ghost"), btn("Exclure", "blocked", "ghost")), out);
   box.scrollIntoView({ behavior: "smooth" });
@@ -176,6 +196,21 @@ async function loadMoney() {
   $("inbound-quotes").replaceChildren(...d.inbound_quotes.map((q) => el("tr", {},
     el("td", {}, when(q.received_at)), el("td", {}, q.from_addr), el("td", {}, q.status), el("td", {}, q.quote_id || "—"))));
 }
+
+async function loadInbox() {
+  const d = await api("/api/admin/inbox");
+  const done = (path, id) => { const b = el("button", { type: "button", class: "ghost" }, "Traité"); b.addEventListener("click", async () => { await api(path, { id }); load(); }); return b; };
+  $("alerts").replaceChildren(...d.alerts.map((a) => el("tr", {}, el("td", {}, when(a.created_at)), el("td", {}, ALERTS[a.kind] || a.kind),
+    el("td", {}, a.ref), el("td", {}, a.detail), el("td", {}, done("/api/admin/alert/close", a.id)))));
+  $("leads").replaceChildren(...d.leads.filter((l) => l.status === "open").map((l) => el("tr", {}, el("td", {}, when(l.created_at)),
+    el("td", {}, TOPICS[l.topic] || l.topic), el("td", {}, `${l.name} (${l.company}) — ${l.email} — ${l.phone}`), el("td", {}, l.message),
+    el("td", {}, done("/api/admin/lead/close", l.id)))));
+}
+$("watch-run").addEventListener("click", async () => {
+  const r = await api("/api/admin/watch/run", {});
+  $("watch-out").textContent = `${r.waves} relance(s) d'offres, ${r.escalated} dossier(s) passé(s) à un humain, ${r.alerts} alerte(s) créée(s).`;
+  load();
+});
 
 $("c-refresh").addEventListener("click", () => loadCarriers());
 $("c-status").addEventListener("change", () => loadCarriers());
