@@ -13,14 +13,15 @@ import hashlib
 import hmac
 import re
 import secrets
+import threading
 import time
 from dataclasses import asdict
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from fretrau import booking, geo, invoicing, mailer, market, offers, pricing, registry, security
-from fretrau.agents import compliance, email_agent, intake, llm
+from fretrau import booking, content, geo, invoicing, mailer, market, offers, pricing, registry, security
+from fretrau.agents import compliance, email_agent, intake, llm, vetting, watch
 from fretrau.db import DB
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -61,6 +62,9 @@ RL_BOOK = security.RateLimiter(5, 600)
 RL_LOGIN = security.RateLimiter(10, 900)
 RL_TRACK = security.RateLimiter(30, 60)
 RL_SIGNUP = security.RateLimiter(5, 3600)
+RL_CONTACT = security.RateLimiter(5, 3600)
+WINDOWS = {"journee": "Dans la journée", "matin": "Matin (8 h - 12 h)", "apres-midi": "Après-midi (13 h - 17 h)"}
+LEAD_TOPICS = ("rappel", "devis", "transporteur", "autre")
 GUARD = security.LoginGuard()
 
 
@@ -217,6 +221,9 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---------- fichiers statiques ----------
     def static(self, path):
+        page = content.render(path.rstrip("/") or "/")
+        if page is not None:
+            return self.send_bytes(200, "text/html; charset=utf-8", page.encode())
         if path in ("/", ""):
             path = "/index.html"
         full = os.path.realpath(os.path.join(WEB, path.lstrip("/")))
@@ -224,14 +231,22 @@ class Handler(BaseHTTPRequestHandler):
         if not full.startswith(WEB + os.sep) or ext not in MIME or not os.path.isfile(full):
             raise ApiError(404, "Introuvable.")
         with open(full, "rb") as f:
-            self.send_bytes(200, MIME[ext], f.read())
+            body = f.read()
+        if ext == ".html":                              # en-tête et pied de page communs à tout le site
+            body = body.replace(b"<!--HEADER-->", content.header().encode()).replace(b"<!--FOOTER-->", content.footer().encode())
+        self.send_bytes(200, MIME[ext], body)
 
     # ---------- API ----------
     def api(self, method, path):
         if method == "GET" and path == "/api/cities":
             return self.send_json(200, {"cities": sorted(geo.CITIES), "options": pricing.OPTIONS,
                                         "modes": pricing.MODES, "llm": llm.available(),
+                                        "defaults": pricing.DEFAULTS, "windows": WINDOWS,
                                         "quote_email": os.environ.get("FRETRAU_QUOTE_EMAIL", "")})
+        if method == "POST" and path == "/api/rates":
+            return self.api_rates()
+        if method == "POST" and path == "/api/contact":
+            return self.api_contact()
         m = re.fullmatch(r"/api/quote/([A-Za-z0-9_-]{8,40})", path)
         if method == "GET" and m:
             return self.api_quote_view(m.group(1))
@@ -258,6 +273,47 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/admin/"):
             return self.api_admin(method, path)
         raise ApiError(404, "Introuvable.")
+
+    def api_rates(self):
+        """Vérificateur de tarif : estimation des trois types de transport sur un trajet, sans créer de devis."""
+        if not RL_QUOTE.allow(self.ip()):
+            raise ApiError(429, "Trop de demandes, patientez un instant.")
+        d = self.read_json()
+        try:
+            origin, destination = security.clean_text(d.get("origin"), 60), security.clean_text(d.get("destination"), 60)
+        except ValueError:
+            raise ApiError(422, "Indiquez un départ et une arrivée.")
+        factor = market.factor(DB_, origin, destination) if geo.known(origin) and geo.known(destination) else 1.0
+        rates = []
+        try:
+            for mode, label in pricing.MODES.items():
+                a = pricing.DEFAULTS[mode]
+                q = pricing.build_quote(origin, destination, mode, a["pallets"], a["weight_kg"], {}, market_factor=factor)
+                rates.append({"mode": mode, "label": label, "price_ht": q.price_ht, "per_km": round(q.price_ht / q.distance_km, 2),
+                              "transit_days": q.transit_days, "pallets": a["pallets"], "weight_kg": a["weight_kg"]})
+        except pricing.QuoteError as e:
+            raise ApiError(422, str(e))
+        self.send_json(200, {"origin": geo.label(origin), "destination": geo.label(destination),
+                             "distance_km": q.distance_km, "rates": rates})
+
+    def api_contact(self):
+        if not RL_CONTACT.allow(self.ip()):
+            raise ApiError(429, "Trop de messages, réessayez plus tard.")
+        d = self.read_json()
+        if d.get("website"):
+            return self.send_json(200, {"ok": True})
+        try:
+            lead = {"topic": d.get("topic") if d.get("topic") in LEAD_TOPICS else "autre",
+                    "name": security.clean_text(d.get("name"), 80), "company": security.clean_text(d.get("company"), 120),
+                    "email": security.clean_text(d.get("email"), 254).lower(), "phone": security.clean_text(d.get("phone"), 20),
+                    "message": security.clean_text(d.get("message"), 2000)}
+        except ValueError:
+            raise ApiError(422, "Tous les champs sont obligatoires.")
+        if not security.EMAIL_RE.match(lead["email"]) or not security.PHONE_RE.match(lead["phone"]):
+            raise ApiError(422, "Coordonnées invalides.")
+        DB_.add_lead(**lead)
+        DB_.audit("anonymous", "lead_" + lead["topic"], self.ip())
+        self.send_json(201, {"ok": True})
 
     def api_quote(self):
         if not RL_QUOTE.allow(self.ip()):
@@ -355,6 +411,8 @@ class Handler(BaseHTTPRequestHandler):
                 "pickup_address": security.clean_text(d.get("pickup_address"), 200),
                 "delivery_address": security.clean_text(d.get("delivery_address"), 200),
                 "goods": security.clean_text(d.get("goods"), 200),
+                "pickup_window": d.get("pickup_window") if d.get("pickup_window") in WINDOWS else "journee",
+                "delivery_window": d.get("delivery_window") if d.get("delivery_window") in WINDOWS else "journee",
             })
         except ValueError as e:
             raise ApiError(422, str(e))
@@ -423,7 +481,9 @@ class Handler(BaseHTTPRequestHandler):
                 ("Lieu de livraison", s["delivery_address"]),
                 ("Trajet", f"{geo.label(s['origin'])} → {geo.label(s['destination'])}"), ("Marchandise", s["goods"]),
                 ("Palettes", s.get("pallets")), ("Poids (kg)", s["weight_kg"]),
-                ("Date d'enlèvement", s["pickup_date"]), ("Transporteur", b["carrier_name"])]
+                ("Date d'enlèvement", f"{s['pickup_date']} — {WINDOWS.get(s.get('pickup_window'), WINDOWS['journee'])}"),
+                ("Créneau de livraison", WINDOWS.get(s.get("delivery_window"), WINDOWS["journee"])),
+                ("Transporteur", b["carrier_name"])]
         body = "".join(f"<tr><th>{e(k)}</th><td>{e(v)}</td></tr>" for k, v in rows)
         page = (f"<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Lettre de voiture {e(code)}</title>"
                 f"<link rel='stylesheet' href='/styles.css'></head><body class='doc'><h1>Lettre de voiture</h1>"
@@ -577,6 +637,8 @@ class Handler(BaseHTTPRequestHandler):
                 s, cu = json.loads(b["shipment"]), json.loads(b["customer"])
                 load = offers.public_load(b)
                 load.update({"price": b["carrier_price"], "pickup_address": s["pickup_address"],
+                             "pickup_window": WINDOWS.get(s.get("pickup_window"), WINDOWS["journee"]),
+                             "delivery_window": WINDOWS.get(s.get("delivery_window"), WINDOWS["journee"]),
                              "delivery_address": s["delivery_address"], "contact": f"{cu['name']} — {cu['phone']}",
                              "steps": [m["step"] for m in DB_.milestones(b["id"])]})
                 out.append(load)
@@ -658,7 +720,12 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(422, "L'attestation d'assurance doit être en cours de validité.")
         if DB_.account_by_email(ident["email"]):
             raise ApiError(409, "Un compte existe déjà avec cette adresse e-mail.")
+        report = vetting.check(siret, ident["company"])
+        if report["status"] == "refused":
+            DB_.audit("vetting_agent", "application_refused", siret)
+            raise ApiError(422, "Cette entreprise apparaît comme fermée dans l'Annuaire des Entreprises. Contactez-nous en cas d'erreur.")
         fields = {"status": "pending_review", "licence_no": licence, "insurance_until": insurance.isoformat(),
+                  "vetting": json.dumps(report, ensure_ascii=False),
                   "email": ident["email"], "phone": ident["phone"], "modes": ",".join(modes),
                   "europe": int(d.get("europe") is True), "equipment": equipment, "base_place": base}
         existing = DB_.carrier_by_siret(siret)
@@ -725,9 +792,36 @@ class Handler(BaseHTTPRequestHandler):
             rows = DB_.list_carriers(status=status, limit=100, search=search)
             keys = ("id", "status", "source", "name", "siret", "licence_no", "insurance_until", "base_place", "modes",
                     "europe", "equipment", "email", "phone", "km_base", "note")
-            return self.send_json(200, {"carriers": [{k: r[k] for k in keys} for r in rows],
+            out = []
+            for r in rows:
+                item = {k: r[k] for k in keys}
+                item["vetting"] = json.loads(r["vetting"]) if r["vetting"] else None
+                out.append(item)
+            return self.send_json(200, {"carriers": out,
                                         "counts": DB_.carrier_counts(), "demo": registry.demo_enabled(),
                                         "prospects_file": os.path.isfile(PROSPECTS_CSV)})
+        if method == "POST" and path == "/api/admin/carrier/recheck":
+            cid = self.read_json().get("id")
+            row = DB_.carrier_row(cid) if isinstance(cid, int) and not isinstance(cid, bool) else None
+            if not row or not row["siret"]:
+                raise ApiError(404, "Transporteur introuvable ou sans SIRET.")
+            report = vetting.check(row["siret"], row["name"].split(" (")[0])
+            DB_.update_carrier(cid, vetting=json.dumps(report, ensure_ascii=False))
+            DB_.audit("vetting_agent", "recheck_" + report["status"], f"carrier={cid}")
+            return self.send_json(200, report)
+        if method == "GET" and path == "/api/admin/inbox":
+            return self.send_json(200, {"alerts": DB_.list_alerts(), "leads": DB_.list_leads()})
+        if method == "POST" and path in ("/api/admin/alert/close", "/api/admin/lead/close"):
+            rid = self.read_json().get("id")
+            close = DB_.close_alert if "alert" in path else DB_.close_lead
+            if isinstance(rid, bool) or not isinstance(rid, int) or not close(rid):
+                raise ApiError(404, "Introuvable ou déjà traité.")
+            DB_.audit("admin", path.rsplit("/", 2)[1] + "_closed", str(rid))
+            return self.send_json(200, {"ok": True})
+        if method == "POST" and path == "/api/admin/watch/run":
+            result = watch.run(DB_, PUBLIC_URL)
+            DB_.audit("admin", "watch_run", json.dumps(result))
+            return self.send_json(200, result)
         if method == "POST" and path == "/api/admin/carrier/update":
             return self.api_admin_carrier_update()
         if method == "POST" and path == "/api/admin/prospects/import":
@@ -776,7 +870,8 @@ class Handler(BaseHTTPRequestHandler):
                 "bookings": len(rows), "confirmed": len(done),
                 "pending_human": sum(1 for r in rows if r["status"] == "pending_human"),
                 "sourcing": sum(1 for r in rows if r["status"] == "sourcing"),
-                "carriers": DB_.carrier_counts(),
+                "carriers": DB_.carrier_counts(), "alerts": len(DB_.list_alerts()),
+                "leads": sum(1 for x in DB_.list_leads() if x["status"] == "open"),
                 "revenue_ht": round(revenue, 2), "margin_ht": round(revenue - cost, 2),
                 "audit": DB_.audit_tail(20), "audit_intact": DB_.verify_audit_chain()[0]})
         raise ApiError(404, "Introuvable.")
@@ -847,8 +942,26 @@ def make_server(host="127.0.0.1", port=8080):
     return ThreadingHTTPServer((host, port), Handler)
 
 
+def start_watch(interval_s: float):
+    """Lance l'agent de surveillance en tâche de fond (relances d'offres, retards, assurances)."""
+    def loop():
+        while True:
+            time.sleep(interval_s)
+            try:
+                result = watch.run(DB_, PUBLIC_URL)
+                if any(result.values()):
+                    DB_.audit("watch_agent", "run", json.dumps(result))
+                mailer.flush(DB_)
+            except Exception:
+                pass                                  # l'agent ne doit jamais faire tomber le serveur
+    threading.Thread(target=loop, daemon=True).start()
+
+
 if __name__ == "__main__":
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8080"))
     print(f"[FRETRAU] http://{host}:{port}  (admin : /admin.html)  LLM: {'actif' if llm.available() else 'gabarits'}")
+    _watch = float(os.environ.get("FRETRAU_WATCH_SECONDS", "300"))
+    if _watch > 0:
+        start_watch(_watch)
     make_server(host, port).serve_forever()

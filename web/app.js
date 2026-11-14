@@ -10,6 +10,7 @@ const LABELS = {
 };
 const MODES = { FTL: "Camion complet", PTL: "Lot partiel", LTL: "Palettes" };
 let lastQuote = null;
+let DEFAULTS = {};
 
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
@@ -38,13 +39,24 @@ async function init() {
   Object.entries(info.options).forEach(([key, label]) => {
     box.append(el("label", {}, el("input", { type: "checkbox", "data-opt": key }), label));
   });
+  DEFAULTS = info.defaults;
+  ["pickup-window", "delivery-window"].forEach((id) => Object.entries(info.windows).forEach(([k, v]) => $(id).append(el("option", { value: k }, v))));
+  const params = new URLSearchParams(location.search);
   const today = new Date(); today.setDate(today.getDate() + 1);
   $("pickup").value = today.toISOString().slice(0, 10);
   $("pickup").min = new Date().toISOString().slice(0, 10);
   document.querySelectorAll("input[name=mode]").forEach((r) => r.addEventListener("change", syncMode));
   syncMode();
   if (info.quote_email) { $("mail-quote-addr").textContent = info.quote_email; $("mail-quote").classList.remove("hidden"); }
-  const linked = new URLSearchParams(location.search).get("devis");
+  if (params.get("depart") && params.get("arrivee")) {      // arrivée depuis un formulaire « prix immédiat » d'une autre page
+    $("origin").value = params.get("depart"); $("destination").value = params.get("arrivee");
+    const radio = document.querySelector(`input[name=mode][value="${["FTL", "PTL", "LTL"].includes(params.get("mode")) ? params.get("mode") : "FTL"}"]`);
+    radio.checked = true; syncMode();
+    const opt = document.querySelector(`[data-opt="${(params.get("option") || "").replace(/[^a-z_]/g, "")}"]`);
+    if (opt) opt.checked = true;
+    $("quote-form").requestSubmit();
+  }
+  const linked = params.get("devis");
   if (linked) {                                   // lien reçu dans un devis envoyé par e-mail
     try {
       const q = await api("/api/quote/" + encodeURIComponent(linked));
@@ -59,7 +71,6 @@ async function init() {
 function syncMode() {
   const mode = document.querySelector("input[name=mode]:checked").value;
   $("pallets-label").textContent = mode === "FTL" ? "Palettes (facultatif)" : mode === "PTL" ? "Palettes (4 à 20)" : "Palettes";
-  $("pallets").required = mode !== "FTL";
 }
 
 $("quote-form").addEventListener("submit", async (e) => {
@@ -68,21 +79,25 @@ $("quote-form").addEventListener("submit", async (e) => {
   const mode = document.querySelector("input[name=mode]:checked").value;
   const options = {};
   document.querySelectorAll("[data-opt]").forEach((c) => { options[c.dataset.opt] = c.checked; });
-  const pallets = $("pallets").value ? parseInt($("pallets").value, 10) : null;
+  // Champs laissés vides : hypothèses standard, affichées avec le prix pour que le client les corrige.
+  const std = DEFAULTS[mode] || {};
+  const assumed = !$("weight").value || (mode !== "FTL" && !$("pallets").value);
+  const pallets = $("pallets").value ? parseInt($("pallets").value, 10) : std.pallets;
   const body = {
     origin: $("origin").value.trim(), destination: $("destination").value.trim(), mode, pallets,
-    weight_kg: parseFloat($("weight").value), pickup_date: $("pickup").value, options,
+    weight_kg: $("weight").value ? parseFloat($("weight").value) : std.weight_kg, pickup_date: $("pickup").value, options,
   };
   $("quote-btn").disabled = true;
   try {
     const q = await api("/api/quote", body);
     lastQuote = q;
-    renderQuote(q);
+    renderQuote(q, assumed ? `Estimation pour ${body.pallets ? body.pallets + " palette(s), " : ""}${body.weight_kg} kg. Précisez votre envoi pour un prix exact.` : "");
+    if (assumed) $("more").open = true;
   } catch (err) { showError("quote-error", err.message); }
   finally { $("quote-btn").disabled = false; }
 });
 
-function renderQuote(q) {
+function renderQuote(q, note) {
   const box = $("result");
   const lower = el("input", { type: "number", min: "20", step: "1", placeholder: "Prix HT reçu ailleurs", "aria-label": "Prix HT reçu ailleurs" });
   const lowerBtn = el("button", { type: "button", class: "ghost" }, "Demander un alignement");
@@ -98,6 +113,7 @@ function renderQuote(q) {
   box.replaceChildren(
     el("h2", {}, `${q.origin} → ${q.destination}`),
     el("p", { class: "muted" }, `${MODES[q.mode] || q.mode} · ${q.distance_km} km · enlèvement le ${new Date(q.pickup_date + "T12:00:00").toLocaleDateString("fr-FR")} · livraison estimée sous ${q.transit_days} jour(s)`),
+    note ? el("div", { class: "ok-box" }, note) : "",
     el("div", { class: "price" }, eur(q.price_ht), el("small", {}, " HT")),
     el("p", { class: "muted" }, q.vat > 0 ? `${eur(q.price_ttc)} TTC (TVA 20 %)` : "Transport international : TVA selon régime applicable (autoliquidation possible)."),
     el("table", { class: "lines" }, ...Object.entries(q.breakdown).map(([k, v]) => el("tr", {}, el("td", {}, LABELS[k] || k), el("td", {}, eur(v))))),
@@ -118,6 +134,7 @@ $("book-form").addEventListener("submit", async (e) => {
     quote_id: lastQuote.quote_id, accept_cgv: $("cgv").checked,
     website: document.querySelector("[name=website]").value,
     pickup_address: $("pickup-address").value, delivery_address: $("delivery-address").value, goods: $("goods").value,
+    pickup_window: $("pickup-window").value, delivery_window: $("delivery-window").value,
     contact: { name: $("c-name").value, company: $("c-company").value, email: $("c-email").value, phone: $("c-phone").value },
   };
   $("book-btn").disabled = true;

@@ -68,7 +68,7 @@ function myCard(l) {
   const box = el("div", { class: "card" },
     el("h3", {}, `${l.origin} → ${l.destination} — ${eur(l.price)} HT`),
     el("p", { class: "muted" }, `${l.code} · ${describe(l)}`),
-    el("p", {}, `Enlèvement : ${l.pickup_address}`), el("p", {}, `Livraison : ${l.delivery_address}`),
+    el("p", {}, `Enlèvement : ${l.pickup_address} — ${l.pickup_window}`), el("p", {}, `Livraison : ${l.delivery_address} — ${l.delivery_window}`),
     el("p", {}, `Marchandise : ${l.goods} — contact : ${l.contact}`));
   if (!next) { box.append(el("div", { class: "ok-box" }, "Livraison enregistrée. Règlement à 30 jours.")); return box; }
   const who = el("input", { placeholder: "Nom du réceptionnaire", "aria-label": "Nom du réceptionnaire" });

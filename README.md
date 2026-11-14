@@ -13,7 +13,7 @@ Aucune dépendance externe (Python 3.11+ uniquement, SQLite intégré).
 ```bash
 FRETRAU_ADMIN_PASSWORD='un-mot-de-passe-long-et-unique' python3 server.py
 # Site : http://127.0.0.1:8080   Admin : /admin.html   Espace client : /portail.html   Transporteurs : /transporteur.html
-python3 -m unittest discover -s tests -v      # 58 tests
+python3 -m unittest discover -s tests -v      # 71 tests
 ```
 
 Variables : `PORT`, `HOST`, `FRETRAU_DB`, `FRETRAU_SECRET` (signature des sessions),
@@ -21,7 +21,10 @@ Variables : `PORT`, `HOST`, `FRETRAU_DB`, `FRETRAU_SECRET` (signature des sessio
 `FRETRAU_DEMO_SPEED=360` (suivi accéléré : 1 h simulée = 10 s), `ANTHROPIC_API_KEY` (rédaction des messages et lecture
 des e-mails par Claude), `FRETRAU_DEMO=0` (désactive les 13 transporteurs fictifs : seuls les transporteurs réels
 vérifiés reçoivent des offres), `FRETRAU_QUOTE_EMAIL` (adresse affichée pour les demandes de devis par e-mail),
-`FRETRAU_TARGET_MARGIN`, `FRETRAU_MIN_MARGIN`, `FRETRAU_FUEL_SURCHARGE` (règles de prix).
+`FRETRAU_TARGET_MARGIN`, `FRETRAU_MIN_MARGIN`, `FRETRAU_FUEL_SURCHARGE` (règles de prix),
+`FRETRAU_PHONE`, `FRETRAU_CONTACT_EMAIL` (coordonnées affichées), `FRETRAU_VETTING=0` (coupe le contrôle automatique des SIRET),
+`FRETRAU_WATCH_SECONDS` (fréquence de l'agent de surveillance, 300 par défaut, 0 pour l'arrêter),
+`FRETRAU_OFFER_WAIT_MINUTES` (attente avant de relancer d'autres transporteurs, 120 par défaut).
 
 ## Architecture
 
@@ -32,6 +35,9 @@ vérifiés reçoivent des offres), `FRETRAU_QUOTE_EMAIL` (adresse affichée pour
 | `fretrau/geo.py` | 6 051 codes postaux français + 41 villes France et Europe, distance routière estimée |
 | `fretrau/registry.py` | Transporteurs : prospects, candidats, vérifiés, exclus. Seuls les vérifiés sont affectables |
 | `fretrau/offers.py` | Offres de chargement aux transporteurs réels et décision sur leurs réponses (e-mail, portail, admin) |
+| `fretrau/agents/vetting.py` | Agent de contrôle : vérifie le SIRET d'un transporteur candidat auprès de l'Annuaire des Entreprises (existence, activité, code NAF) |
+| `fretrau/agents/watch.py` | Agent de surveillance : relance les offres par vagues, signale les retards d'enlèvement et de livraison, les assurances à échéance |
+| `fretrau/content.py` | Pages du site : solutions, clients, à propos, tarifs, suivi, contact, une page par type de transport |
 | `fretrau/agents/intake.py` | Agent de réception : lit une demande de devis en texte libre, chiffre, répond, ou demande ce qui manque |
 | `fretrau/agents/compliance.py` | Agent de conformité : écarte licence absente, assurance expirée, liste noire, mode ou périmètre non couvert |
 | `fretrau/agents/sourcing.py` | Agent de comparaison : score pondéré prix 40 % / proximité 20 % / note 20 % / ponctualité 20 %, avec explication |

@@ -34,7 +34,13 @@ OPTIONS = {
     "temperature": "Température dirigée",
     "urgent": "Express (moins de 24 h)",
     "flatbed": "Plateau (chargement latéral ou par le haut)",
+    "appointment": "Livraison sur rendez-vous",
+    "residential": "Livraison chez un particulier",
 }
+FLAT_FEES = {"tail_lift": ("hayon", 45.0), "appointment": ("rendez_vous", 25.0), "residential": ("particulier", 35.0)}
+# Hypothèses d'un devis express en deux codes postaux (le client précise ensuite).
+DEFAULTS = {"FTL": {"pallets": None, "weight_kg": 24000}, "PTL": {"pallets": 10, "weight_kg": 5000},
+            "LTL": {"pallets": 1, "weight_kg": 300}}
 MODES = {"FTL": "Camion complet", "PTL": "Lot partiel", "LTL": "Palettes"}
 
 
@@ -108,9 +114,10 @@ def estimate_carrier_cost(mode, origin, destination, pallets, weight_kg, options
     lines["gazole"] = fuel
     subtotal += fuel
 
-    if options.get("tail_lift"):
-        lines["hayon"] = 45.0
-        subtotal += 45.0
+    for key, (line, fee) in FLAT_FEES.items():
+        if options.get(key):
+            lines[line] = fee
+            subtotal += fee
 
     return km, round(subtotal, 2), {k: round(v, 2) for k, v in lines.items()}
 

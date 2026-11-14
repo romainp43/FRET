@@ -50,12 +50,12 @@ def booking_confirmation(customer, code, shipment, price_ht, base_url) -> tuple[
     body = (f"Bonjour {customer['name']},\n\nVotre transport {geo.label(shipment['origin'])} → "
             f"{geo.label(shipment['destination'])} "
             f"est confirmé pour un montant de {price_ht:.2f} € HT.\n\nCode de suivi : {code}\n"
-            f"Suivi : {base_url}/#{code}\n\nCordialement,\nL'équipe FRETRAU")
+            f"Suivi : {base_url}/suivi?code={code}\n\nCordialement,\nL'équipe FRETRAU")
     return subject, body
 
 
 def booking_pending(customer, code, base_url) -> tuple[str, str]:
     return (f"FRETRAU — demande reçue ({code})",
             f"Bonjour {customer['name']},\n\nNous avons bien reçu votre demande. Un conseiller la traite "
-            f"et reviendra vers vous rapidement.\n\nCode de suivi : {code}\nSuivi : {base_url}/#{code}\n\n"
+            f"et reviendra vers vous rapidement.\n\nCode de suivi : {code}\nSuivi : {base_url}/suivi?code={code}\n\n"
             f"Cordialement,\nL'équipe FRETRAU")

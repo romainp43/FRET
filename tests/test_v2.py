@@ -14,6 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 os.environ.setdefault("FRETRAU_DB", ":memory:")
 os.environ.setdefault("FRETRAU_ADMIN_PASSWORD", "mot-de-passe-de-test-long")
+os.environ["FRETRAU_VETTING"] = "0"
 os.environ["FRETRAU_WEBHOOK_SECRET"] = "secret-webhook-de-test"
 
 from fretrau import security, mailer  # noqa: E402

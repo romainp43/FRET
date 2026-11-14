@@ -74,6 +74,14 @@ CREATE TABLE IF NOT EXISTS inbound_quotes (
     id INTEGER PRIMARY KEY AUTOINCREMENT, received_at REAL NOT NULL, from_addr TEXT NOT NULL, raw TEXT NOT NULL,
     quote_id TEXT, status TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, created_at REAL NOT NULL, topic TEXT NOT NULL, name TEXT NOT NULL,
+    company TEXT NOT NULL, email TEXT NOT NULL, phone TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, created_at REAL NOT NULL, kind TEXT NOT NULL, ref TEXT NOT NULL,
+    detail TEXT NOT NULL, status TEXT NOT NULL, UNIQUE(kind, ref)
+);
 """
 CARRIER_ID_BASE = 1000      # les identifiants 1 à 999 sont réservés au réseau de démonstration
 
@@ -91,6 +99,8 @@ class DB:
             cols = [r["name"] for r in self.conn.execute("PRAGMA table_info(bookings)")]
             if "account_id" not in cols:                       # base créée par une version antérieure
                 self.conn.execute("ALTER TABLE bookings ADD COLUMN account_id INTEGER")
+            if "vetting" not in [r["name"] for r in self.conn.execute("PRAGMA table_info(carriers)")]:
+                self.conn.execute("ALTER TABLE carriers ADD COLUMN vetting TEXT")
             if not self.conn.execute("SELECT 1 FROM sqlite_sequence WHERE name='carriers'").fetchone():
                 self.conn.execute("INSERT INTO sqlite_sequence(name, seq) VALUES ('carriers', ?)", (CARRIER_ID_BASE,))
             self.conn.commit()
@@ -289,7 +299,7 @@ class DB:
 
     def update_carrier(self, cid, **fields):
         allowed = {"status", "licence_no", "insurance_until", "email", "phone", "modes", "europe", "equipment",
-                   "note", "verified_at", "base_place", "name"}
+                   "note", "verified_at", "base_place", "name", "vetting"}
         sets = [(k, v) for k, v in fields.items() if k in allowed]
         if not sets:
             return False
@@ -383,3 +393,25 @@ class DB:
     def list_inbound_quotes(self, limit=30):
         return self._all("SELECT id, received_at, from_addr, quote_id, status FROM inbound_quotes ORDER BY id DESC LIMIT ?",
                          (limit,))
+
+    # ---- demandes de contact et de devis sur mesure ----
+    def add_lead(self, topic, name, company, email, phone, message):
+        self._exec("INSERT INTO leads(created_at, topic, name, company, email, phone, message, status) "
+                   "VALUES (?,?,?,?,?,?,?, 'open')", (time.time(), topic, name, company, email, phone, message))
+
+    def list_leads(self, limit=100):
+        return self._all("SELECT * FROM leads ORDER BY id DESC LIMIT ?", (limit,))
+
+    def close_lead(self, lead_id):
+        return self._exec("UPDATE leads SET status='done' WHERE id=? AND status='open'", (lead_id,)).rowcount > 0
+
+    # ---- alertes de l'agent de surveillance (une seule par motif et par dossier) ----
+    def add_alert(self, kind, ref, detail):
+        return self._exec("INSERT OR IGNORE INTO alerts(created_at, kind, ref, detail, status) VALUES (?,?,?,?, 'open')",
+                          (time.time(), kind, str(ref), detail[:300])).rowcount > 0
+
+    def list_alerts(self, status="open", limit=100):
+        return self._all("SELECT * FROM alerts WHERE status=? ORDER BY id DESC LIMIT ?", (status, limit))
+
+    def close_alert(self, alert_id):
+        return self._exec("UPDATE alerts SET status='done' WHERE id=? AND status='open'", (alert_id,)).rowcount > 0
