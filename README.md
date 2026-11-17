@@ -129,3 +129,11 @@ Le référentiel complet n'est PAS dans le ZIP (fichier volumineux, licences à 
 - **Contact / rappel** (`/contact.html`) et **chaînage de chargements** (admin) : repère des enchaînements pour réduire les kilomètres à vide.
 - Alertes e-mail à l'exploitation : variable `FRETRAU_OPS_EMAIL`. Purge RGPD des contacts après 1 an.
 - Non fait (volontairement) : paiement par carte (nécessite un prestataire), SMS (opérateur + consentement), prix en ligne combiné/lot partiel (pas de données fiables).
+
+## v10 — vue globale, agents entraînés, modules complémentaires
+
+- `docs/ARCHITECTURE-GLOBALE.md` : chaque onglet/fonction de LinkLane → équivalent FRETRAU → état (réalisé, simulé, théorique, impossible sans partenaire).
+- `docs/ENTRAINEMENT-AGENTS.md` : méthode, résultats et limites de l'entraînement.
+- Nouveaux agents : `guard` (anti-fraude), `watchtower` (veille retards, `/api/admin/watchtower`), `claims_triage`.
+- Modules théoriques (désactivés sans configuration) : SMS (`FRETRAU_SMS_PROVIDER`/`FRETRAU_SMS_URL`), paiement Stripe (`FRETRAU_STRIPE_KEY`, `FRETRAU_STRIPE_WEBHOOK_SECRET`), vérifications officielles SIREN/TVA.
+- Nouvelles pages : suivi, espace client, partage de position chauffeur, estimation lot partiel/combiné, choix de confidentialité.

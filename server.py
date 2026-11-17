@@ -6,6 +6,7 @@ Variables :  PORT, HOST, FRETRAU_DB, FRETRAU_SECRET, FRETRAU_HTTPS=1, FRETRAU_TR
              FRETRAU_DEMO_SPEED (1 = temps réel, 360 = 1 h simulée en 10 s), ANTHROPIC_API_KEY (optionnel)
 """
 import hashlib
+import hmac
 import html
 import json
 import os
@@ -13,11 +14,12 @@ import re
 import secrets
 import time
 from dataclasses import asdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from fretrau import booking, chaining, claims, geo, vetting, invoicing, mailer, places, pricing, security
+from fretrau import booking, chaining, claims, driver, geo, vetting, invoicing, mailer, payments, places, pricing, security, sms, watch_run
+from fretrau.agents import claims_triage, guard
 from fretrau.agents import email_agent, intake, ratematch, llm
 from fretrau.db import DB
 
@@ -53,6 +55,8 @@ if not TOTP_SECRET:
 ALLOWED_HOSTS = {h.strip().lower() for h in os.environ.get("FRETRAU_ALLOWED_HOSTS", "").split(",") if h.strip()}
 SESSION_SECRET = os.environ.get("FRETRAU_SECRET", secrets.token_hex(32))
 SESSIONS = security.Sessions(SESSION_SECRET.encode())
+ACCT_SESSIONS = security.Sessions((SESSION_SECRET + "|compte").encode(), ttl=86400 * 7)   # secret distinct : un cookie client n'ouvre jamais l'admin
+RL_ACCT = security.RateLimiter(5, 900)
 
 DB_ = DB(os.environ.get("FRETRAU_DB", os.path.join(ROOT, "fretrau.db")))
 RL_GLOBAL = security.RateLimiter(120, 60)
@@ -150,7 +154,7 @@ class Handler(BaseHTTPRequestHandler):
 
     PERMS = {  # rôle -> préfixes/points d'accès autorisés
         "admin": None,
-        "ops": ("bookings", "booking", "outbox", "stats", "me", "pod", "carriers", "contacts", "claims", "chaining"),
+        "ops": ("bookings", "booking", "outbox", "stats", "me", "pod", "carriers", "contacts", "claims", "chaining", "watchtower", "driver-link", "sms"),
         "finance": ("bookings", "invoice", "stats", "me", "payables"),
     }
 
@@ -233,9 +237,130 @@ class Handler(BaseHTTPRequestHandler):
             return self.api_contact()
         if method == "POST" and path == "/api/claim":
             return self.api_claim()
+        if method == "POST" and path.startswith(("/api/indicative", "/api/sms/", "/api/driver/", "/api/pay/", "/api/webhook/stripe", "/api/account/")):
+            return self.api_extra(path)
+        if method == "GET" and path == "/api/account/bookings":
+            return self.api_account_bookings()
         if path.startswith("/api/admin/"):
             return self.api_admin(method, path)
         raise ApiError(404, "Introuvable.")
+
+    # ---------- modules complémentaires (SMS, chauffeur, paiement, compte client, estimations) ----------
+    def api_extra(self, path):
+        if path == "/api/webhook/stripe":
+            secret = os.environ.get("FRETRAU_STRIPE_WEBHOOK_SECRET", "")
+            if not secret:
+                raise ApiError(404, "Introuvable.")
+            raw = []
+            self.read_json(raw_out=raw)
+            try:
+                ev = payments.verify_webhook(raw[0] if raw else b"", self.headers.get("Stripe-Signature", ""), secret)
+            except ValueError as e:
+                raise ApiError(400, str(e))
+            obj = (ev.get("data") or {}).get("object") or {}
+            if ev.get("type") == "checkout.session.completed" and obj.get("id") and DB_.get_payment_by_ref(obj["id"]):
+                DB_.set_payment_status(obj["id"], "paid")
+                DB_.audit("stripe", "payment_paid", obj["id"])
+            return self.send_json(200, {"received": True})
+        d = self.read_json()
+        if path == "/api/indicative":
+            if not RL_FORM.allow(self.ip() + "|ind") and not RL_TRACK.allow(self.ip()):
+                raise ApiError(429, "Trop de requêtes.")
+            try:
+                return self.send_json(200, pricing.indicative(str(d.get("kind", "")), str(d.get("origin", ""))[:80], str(d.get("destination", ""))[:80],
+                                                              d.get("pallets"), d.get("weight_kg")))
+            except pricing.QuoteError as e:
+                raise ApiError(422, str(e))
+        if path == "/api/sms/stop":
+            if not RL_FORM.allow(self.ip() + "|sms"):
+                raise ApiError(429, "Trop de requêtes.")
+            if d.get("website"):
+                return self.send_json(200, {"ok": True})
+            if not sms.stop(DB_, str(d.get("phone", "")), SESSION_SECRET):
+                raise ApiError(422, "Numéro invalide.")
+            DB_.audit("public", "sms_optout", "")
+            return self.send_json(200, {"ok": True})
+        if path.startswith("/api/driver/"):
+            token = str(d.get("token", ""))
+            if not RL_TRACK.allow(self.ip()):
+                raise ApiError(429, "Trop de requêtes.")
+            r = driver.resolve(DB_, token)
+            if not r:
+                raise ApiError(404, "Lien invalide ou expiré.")
+            link, b = r
+            th = driver._h(token)
+            if path == "/api/driver/consent":
+                DB_.consent_driver_link(th)
+                return self.send_json(200, {"ok": True, "code": b["tracking_code"]})
+            if path == "/api/driver/stop":
+                DB_.revoke_driver_link(th)
+                return self.send_json(200, {"ok": True})
+            if path == "/api/driver/position":
+                res = driver.record(DB_, token, d.get("lat"), d.get("lon"), d.get("accuracy"))
+                if res in ("bad_position", "no_consent"):
+                    raise ApiError(422, "Position refusée.")
+                return self.send_json(200, {"ok": True, "result": res})
+            raise ApiError(404, "Introuvable.")
+        if path == "/api/pay/checkout":
+            if not payments.enabled():
+                raise ApiError(503, "Le paiement en ligne n'est pas activé : la facture est payable après le transport.")
+            stored = DB_.get_quote(str(d.get("quote_id", ""))[:40])
+            if not stored:
+                raise ApiError(404, "Devis introuvable ou expiré.")
+            q = stored["quote"]
+            email = security.clean_text(d.get("email"), 254)
+            if not security.EMAIL_RE.match(email):
+                raise ApiError(422, "E-mail invalide.")
+            try:
+                sess = payments.create_checkout(d["quote_id"], q["price_ttc"], f"Transport {q['origin']} → {q['destination']}", email,
+                                                f"{PUBLIC_URL}/suivi.html?paiement=ok", f"{PUBLIC_URL}/?paiement=annule")
+            except Exception:
+                raise ApiError(502, "Le prestataire de paiement est indisponible.")
+            DB_.add_payment(d["quote_id"], "stripe", sess["provider_ref"], payments.cents(q["price_ttc"]))
+            return self.send_json(200, {"url": sess["url"]})
+        if path in ("/api/account/request", "/api/account/verify"):
+            email = security.clean_text(d.get("email"), 254).lower()
+            if not security.EMAIL_RE.match(email) or not RL_ACCT.allow(self.ip()):
+                raise ApiError(429 if security.EMAIL_RE.match(email) else 422, "Requête refusée.")
+            if path == "/api/account/request":
+                if DB_.bookings_for_email(email, 1):                     # réponse identique que le compte existe ou non (pas d'énumération)
+                    code = f"{secrets.randbelow(10 ** 6):06d}"
+                    DB_.set_login_code(email, hashlib.sha256((SESSION_SECRET + email + code).encode()).hexdigest(), time.time() + 600)
+                    mailer.queue(DB_, email, "Votre code de connexion FRETRAU", f"Votre code : {code}\nValable 10 minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.")
+                    try:
+                        mailer.flush(DB_)
+                    except Exception:
+                        pass
+                return self.send_json(200, {"ok": True})
+            row = DB_.get_login_code(email)
+            good = False
+            if row and row["attempts"] < 5 and row["expires_at"] > time.time():
+                DB_.bump_login_attempt(email)
+                cand = hashlib.sha256((SESSION_SECRET + email + str(d.get("code", ""))).encode()).hexdigest()
+                good = hmac.compare_digest(cand, row["code_hash"])
+            if not good:
+                raise ApiError(401, "Code invalide ou expiré.")
+            DB_.delete_login_code(email)
+            cookie = f"fretrau_acct={ACCT_SESSIONS.issue(email)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800" + ("; Secure" if HTTPS else "")
+            return self.send_json(200, {"ok": True}, {"Set-Cookie": cookie})
+        raise ApiError(404, "Introuvable.")
+
+    def api_account_bookings(self):
+        if self.headers.get("X-Requested-With") != "fretrau":
+            raise ApiError(401, "Authentification requise.")
+        email = None
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == "fretrau_acct":
+                email = ACCT_SESSIONS.verify(v)
+        if not email:
+            raise ApiError(401, "Authentification requise.")
+        out = []
+        for r in DB_.bookings_for_email(email):
+            sh = json.loads(r["shipment"])
+            out.append({"tracking_code": r["tracking_code"], "status": r["status"], "origin": sh.get("origin"), "destination": sh.get("destination"),
+                        "pickup_date": sh.get("pickup_date"), "price_ht": r["customer_price_ht"]})
+        return self.send_json(200, {"bookings": out})
 
     # ---------- formulaires publics : candidature transporteur, contact / rendez-vous, réclamation ----------
     def _form_guard(self):
@@ -290,7 +415,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(201, {"ok": True, "reference": f"T-{app_id:05d}",
                              "message": "Dossier reçu. Nous vérifions l'entreprise, la licence et l'assurance avant tout transport, puis nous vous répondons par e-mail."})
 
-    CONTACT_TOPICS = {"quote": "Demande de prix", "intermodal": "Combiné rail-route (sur devis)", "special": "Transport spécial / hors gabarit",
+    CONTACT_TOPICS = {"privacy": "Exercice de mes droits (données personnelles)", "quote": "Demande de prix", "intermodal": "Combiné rail-route (sur devis)", "special": "Transport spécial / hors gabarit",
                       "account": "Compte entreprise / contrat annuel", "claim": "Question sur un envoi", "other": "Autre"}
 
     def api_contact(self):
@@ -538,9 +663,17 @@ class Handler(BaseHTTPRequestHandler):
 
         if not security.PHONE_RE.match(shipment["site_contact_phone"]):
             raise ApiError(422, "Téléphone du contact sur site invalide.")
-        result = booking.run(stored["quote"], date.fromisoformat(shipment["pickup_date"]),
-                             date.fromisoformat(shipment["deliver_by"]) if shipment.get("deliver_by") else None,
-                             shipment.get("goods_value_eur"))
+        customer["sms_consent"] = d.get("sms_consent") is True
+        assessment = guard.assess(customer, shipment, stored["quote"]["price_ht"], DB_.recent_customer_activity(time.time() - 86400), time.time())
+        if assessment["action"] == "review":
+            result = {"status": "pending_human", "carrier": None, "price": None,
+                      "log": {"escalation_reason": "Contrôle anti-fraude : " + " ; ".join(assessment["flags"]), "alerts": [], "ranking": [],
+                              "rejected_by_compliance": [], "negotiations": []}}
+        else:
+            result = booking.run(stored["quote"], date.fromisoformat(shipment["pickup_date"]),
+                                 date.fromisoformat(shipment["deliver_by"]) if shipment.get("deliver_by") else None,
+                                 shipment.get("goods_value_eur"))
+        result["log"]["guard"] = assessment
         if stored.get("rate_match") and stored["rate_match"]["outcome"] in ("matched", "counter"):
             rm = stored["rate_match"]
             result["log"].setdefault("alerts", []).append(
@@ -618,6 +751,7 @@ class Handler(BaseHTTPRequestHandler):
         shipment = json.loads(b["shipment"])
         events, source = self.tracking_events(b)
         self.send_json(200, {
+            "driver_position": (lambda p: {"lat": p["lat"], "lon": p["lon"], "ts": p["ts"]} if p and time.time() - p["ts"] < 86400 else None)(DB_.last_position(b["id"])),
             "tracking_code": code, "status": b["status"], "origin": shipment["origin"],
             "destination": shipment["destination"], "events": events, "events_source": source,
             "message": None if b["status"] == "confirmed" else
@@ -798,7 +932,28 @@ class Handler(BaseHTTPRequestHandler):
                 r["data"], r["deadlines"] = json.loads(r["data"]), json.loads(r["deadlines"])
                 b = DB_.booking_by_id(r["booking_id"])
                 r["tracking_code"] = b["tracking_code"] if b else ""
+                try:
+                    r["triage"] = claims_triage.triage({**r["data"], "kind": r.get("kind"), "amount_eur": r["data"].get("amount_eur")}, r["deadlines"])
+                except Exception:
+                    r["triage"] = None
             return self.send_json(200, {"claims": rows})
+        if path == "/api/admin/watchtower":
+            if method == "POST":
+                res = watch_run.run(DB_, datetime.now(), PUBLIC_URL, SESSION_SECRET)
+                DB_.audit(who, "watchtower_run", json.dumps(res))
+                return self.send_json(200, res)
+            return self.send_json(200, {"alerts": DB_.list_alerts()})
+        if method == "GET" and path == "/api/admin/sms":
+            return self.send_json(200, {"sms": DB_.list_sms(), "configured": bool(os.environ.get("FRETRAU_SMS_PROVIDER") or os.environ.get("FRETRAU_SMS_URL"))})
+        if method == "POST" and path == "/api/admin/driver-link":
+            d = self.read_json()
+            b = DB_.booking_by_code(str(d.get("tracking_code", ""))) if security.CODE_RE.match(str(d.get("tracking_code", ""))) else None
+            if not b or b["status"] != "confirmed":
+                raise ApiError(404, "Envoi introuvable.")
+            token = driver.new_link(DB_, b["id"])
+            url = f"{PUBLIC_URL}/chauffeur.html#{token}"
+            DB_.audit(who, "driver_link_created", b["tracking_code"])
+            return self.send_json(200, {"url": url})
         if method == "POST" and path == "/api/admin/claims/status":
             d = self.read_json()
             note = security.clean_text(d["note"], 300) if d.get("note") else ""

@@ -22,22 +22,35 @@ def _eur(x: float) -> str:
 class SimulatedCarrierReply:
     """Simule un transporteur : prix de réserve = 96 % de son prix habituel, première demande +18 %."""
 
-    def __init__(self, market_cost: float, price_factor: float):
+    def __init__(self, market_cost: float, price_factor: float, walk_away: float = None):
         self.reservation = round(market_cost * price_factor * 0.96, 2)
         self.ask = round(self.reservation * 1.18, 2)
+        self.walk_away = walk_away          # banc d'essai : refuse net toute offre < walk_away x prix de réserve (None = jamais)
+        self.ended = False
 
     def respond(self, offer: float) -> tuple[bool, float]:
         if offer >= self.reservation:
             return True, offer
+        if self.walk_away and offer < self.walk_away * self.reservation:
+            self.ended = True
+            return False, self.ask
         self.ask = round(max(self.reservation, self.ask - 0.5 * (self.ask - offer)), 2)
         return False, self.ask
 
 
-def negotiate(quote, candidate: dict, carrier) -> dict:
+from ..agent_config import CONFIG as _CFG
+
+OFFERS = _CFG.get("offers", (0.90, 0.94, 0.98, 1.04))     # fractions du coût marché proposées à chaque tour (dernière : plafonnée par la marge minimale)
+SOFT_TARGET = _CFG.get("soft_target", 1.03)                    # on accepte sans insister si la contre-offre est <= 103 % du coût marché
+
+
+def negotiate(quote, candidate: dict, carrier, truth=None, offers=None, soft_target_mult=None, walk_away=None) -> dict:
+    """`truth` : transporteur dont le comportement réel est simulé (banc d'essai) ; par défaut, le même que `carrier`."""
+    offers_f = offers or OFFERS
     market = quote.carrier_cost_estimate
     ceiling = round(quote.price_ht / (1 + pricing.MIN_MARGIN), 2)   # prix d'achat max
-    soft_target = round(market * 1.03, 2)                           # on accepte sans insister
-    sim = SimulatedCarrierReply(market, carrier.price_factor)
+    soft_target = round(market * (soft_target_mult or SOFT_TARGET), 2)
+    sim = SimulatedCarrierReply(market, (truth or carrier).price_factor, walk_away)
     transcript = []
 
     def say(role, price, text):
@@ -46,12 +59,12 @@ def negotiate(quote, candidate: dict, carrier) -> dict:
     ask_text = llm.draft(
         "Demande de prix pour un transport.",
         {"origin": quote.origin, "destination": quote.destination, "mode": quote.mode,
-         "price_text": _eur(market * 0.90)},
+         "price_text": _eur(market * offers_f[0])},
         f"Bonjour, pouvez-vous prendre en charge {quote.origin} → {quote.destination} ({quote.mode}) "
-        f"à {_eur(market * 0.90)} HT ?")
-    say("fretrau", round(market * 0.90, 2), ask_text)
+        f"à {_eur(market * offers_f[0])} HT ?")
+    say("fretrau", round(market * offers_f[0], 2), ask_text)
 
-    offers = [market * 0.90, market * 0.94, market * 0.98, min(ceiling, market * 1.04)]
+    offers = [market * f for f in offers_f]
     counter = None
     for rnd, offer in enumerate(offers[:MAX_ROUNDS], start=1):
         offer = round(min(offer, ceiling), 2)
@@ -59,6 +72,9 @@ def negotiate(quote, candidate: dict, carrier) -> dict:
         if accepted:
             say("transporteur", offer, f"D'accord pour {_eur(offer)} HT.")
             return _result(True, offer, quote, transcript, rnd, ceiling)
+        if sim.ended:
+            say("transporteur", None, "Cette offre est trop basse, je ne donne pas suite.")
+            return _result(False, counter, quote, transcript, rnd, ceiling)
         say("transporteur", counter, f"Je peux faire {_eur(counter)} HT.")
         if counter <= soft_target:
             say("fretrau", counter, f"Accepté à {_eur(counter)} HT.")

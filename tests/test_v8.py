@@ -1,3 +1,4 @@
+import time
 import json, os, re, sys, threading, unittest, urllib.request, urllib.error
 from datetime import date, timedelta
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -126,7 +127,7 @@ class Chaining(unittest.TestCase):
 class Pages(unittest.TestCase):
     def test_all_pages_generated_with_faq_and_no_inline_script(self):
         pages = build_site.pages()
-        self.assertEqual(len(pages), 6 + len(site_content.SERVICES))
+        self.assertEqual(len(pages), 11 + len(site_content.SERVICES))
         for name, h in pages.items():
             self.assertNotRegex(h, r"<script(?![^>]*(src=|type=\"application/ld\+json\"))", name)    # CSP : aucun script en ligne
             self.assertNotIn("onclick", h)
@@ -216,20 +217,21 @@ class Api(unittest.TestCase):
         self.assertEqual(codes[6], 429)
 
     def book(self):
+        self.email = f"marc{time.time_ns()}@example.fr"
         pk = calendar_fr.next_business_day(date.today() + timedelta(days=4)).isoformat()
         s, q = self.call("POST", "/api/quote", {"origin": "Lyon", "destination": "Paris", "mode": "FTL", "pallets": 33,
                                                   "weight_kg": 15000, "pickup_date": pk, "options": {}})
         self.assertEqual(s, 200, q)
-        body = {"quote_id": q["quote_id"], "accept_cgv": True, "contact": {"name": "Marc", "company": "ACME", "email": "marc@example.fr", "phone": "0611223344"},
+        body = {"quote_id": q["quote_id"], "accept_cgv": True, "contact": {"name": "Marc", "company": "ACME", "email": self.email, "phone": "0611223344"},
                 "pickup_window": "08:00-17:00", "delivery_window": "08:00-17:00", "site_contact_name": "Paul", "site_contact_phone": "0611223344",
-                "pickup_address": "1 rue A", "delivery_address": "2 rue B", "goods": "palettes"}
+                "pickup_address": "1 rue Alpha, 69001 Lyon", "delivery_address": "2 rue Beta, 75010 Paris", "goods": "palettes"}
         s, b = self.call("POST", "/api/book", body)
         self.assertEqual(s, 201, b)
         return b["tracking_code"]
 
     def test_claim_requires_matching_email_and_computes_deadlines(self):
         code = self.book()
-        base = {"tracking_code": code, "email": "marc@example.fr", "kind": "damage",
+        base = {"tracking_code": code, "email": self.email, "kind": "damage",
                 "delivered_on": date.today().isoformat(), "description": "Deux palettes écrasées", "reserves_on_receipt": True}
         s, r = self.call("POST", "/api/claim", {**base, "email": "autre@example.fr"})
         self.assertEqual(s, 404)

@@ -9,8 +9,12 @@ from .. import geo
 from ..carriers import CARRIERS
 from . import compliance
 
-W_NORMAL = (0.40, 0.20, 0.20, 0.20)     # prix, proximité, note, ponctualité
-W_TIGHT = (0.25, 0.20, 0.20, 0.35)      # délai serré : la ponctualité prime sur le prix
+from ..agent_config import CONFIG as _CFG
+
+W_NORMAL_DEFAULT = (0.40, 0.20, 0.20, 0.20)     # prix, proximité, note, ponctualité (valeurs d'origine)
+W_TIGHT_DEFAULT = (0.25, 0.20, 0.20, 0.35)      # délai serré : la ponctualité prime sur le prix
+W_NORMAL = _CFG.get("weights_normal", W_NORMAL_DEFAULT)
+W_TIGHT = _CFG.get("weights_tight", W_TIGHT_DEFAULT)
 TIGHT_SLACK_DAYS = 1
 
 

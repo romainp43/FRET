@@ -60,6 +60,29 @@ CREATE TABLE IF NOT EXISTS claims (
     id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER NOT NULL, created_at REAL NOT NULL,
     status TEXT NOT NULL DEFAULT 'received', data TEXT NOT NULL, deadlines TEXT NOT NULL, note TEXT
 );
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER NOT NULL, code TEXT NOT NULL, created_at REAL NOT NULL,
+    severity TEXT NOT NULL, message TEXT NOT NULL, UNIQUE(booking_id, code)
+);
+CREATE TABLE IF NOT EXISTS sms_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, created_at REAL NOT NULL, to_phone TEXT NOT NULL, body TEXT NOT NULL,
+    status TEXT NOT NULL, error TEXT
+);
+CREATE TABLE IF NOT EXISTS sms_optout (phone_hash TEXT PRIMARY KEY, created_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS driver_links (
+    token_hash TEXT PRIMARY KEY, booking_id INTEGER NOT NULL, created_at REAL NOT NULL, expires_at REAL NOT NULL,
+    consent_at REAL, revoked INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS driver_positions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER NOT NULL, ts REAL NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, accuracy REAL
+);
+CREATE TABLE IF NOT EXISTS login_codes (
+    email TEXT PRIMARY KEY, code_hash TEXT NOT NULL, expires_at REAL NOT NULL, attempts INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, quote_id TEXT NOT NULL, booking_code TEXT, provider TEXT NOT NULL, provider_ref TEXT,
+    amount_cents INTEGER NOT NULL, currency TEXT NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS inbound (
     id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER NOT NULL, carrier_id INTEGER,
     received_at REAL NOT NULL, raw TEXT NOT NULL, parsed_amount REAL, decision TEXT NOT NULL
@@ -309,6 +332,113 @@ class DB:
             b = self.conn.execute("DELETE FROM carrier_applications WHERE created_at < ? AND status='rejected'", (cutoff,)).rowcount
             self.conn.commit()
         return a + b
+
+    # ---- alertes de suivi (veille retards) ----
+    def add_alert(self, booking_id, code, severity, message):
+        """Vrai si l'alerte est nouvelle (idempotent : une alerte donnée n'est émise qu'une fois par réservation)."""
+        with _lock:
+            cur = self.conn.execute("INSERT OR IGNORE INTO alerts (booking_id, code, created_at, severity, message) VALUES (?,?,?,?,?)",
+                                    (booking_id, code, time.time(), severity, message))
+            self.conn.commit()
+            return cur.rowcount == 1
+
+    def list_alerts(self, limit=200):
+        return self._all("SELECT a.*, b.tracking_code FROM alerts a JOIN bookings b ON b.id=a.booking_id ORDER BY a.id DESC LIMIT ?", (limit,))
+
+    def confirmed_bookings(self, limit=2000):
+        return self._all("SELECT * FROM bookings WHERE status='confirmed' ORDER BY id DESC LIMIT ?", (limit,))
+
+    def recent_customer_activity(self, since_ts):
+        """(e-mail, empreinte IP, date) des réservations récentes : sert à la garde anti-fraude, jamais affiché."""
+        out = []
+        for r in self._all("SELECT customer, created_at FROM bookings WHERE created_at >= ?", (since_ts,)):
+            c = json.loads(r["customer"])
+            out.append({"email": (c.get("email") or "").lower(), "ip_hash": (c.get("consent") or {}).get("ip_hash", ""), "created_at": r["created_at"]})
+        return out
+
+    # ---- compte client (code par e-mail) ----
+    def set_login_code(self, email, code_hash, expires_at):
+        self._exec("INSERT OR REPLACE INTO login_codes (email, code_hash, expires_at, attempts) VALUES (?,?,?,0)", (email, code_hash, expires_at))
+
+    def get_login_code(self, email):
+        rows = self._all("SELECT * FROM login_codes WHERE email=?", (email,))
+        return rows[0] if rows else None
+
+    def bump_login_attempt(self, email):
+        self._exec("UPDATE login_codes SET attempts=attempts+1 WHERE email=?", (email,))
+
+    def delete_login_code(self, email):
+        self._exec("DELETE FROM login_codes WHERE email=?", (email,))
+
+    def bookings_for_email(self, email, limit=100):
+        out = []
+        for r in self._all("SELECT * FROM bookings ORDER BY id DESC LIMIT 5000"):
+            if json.loads(r["customer"]).get("email", "").lower() == email:
+                out.append(r)
+                if len(out) >= limit:
+                    break
+        return out
+
+    def get_payment_by_ref(self, ref):
+        rows = self._all("SELECT * FROM payments WHERE provider_ref=?", (ref,))
+        return rows[0] if rows else None
+
+    def add_payment(self, quote_id, provider, ref, amount_cents, status="pending"):
+        self._exec("INSERT INTO payments (quote_id, provider, provider_ref, amount_cents, currency, status, created_at, updated_at) VALUES (?,?,?,?, 'eur', ?,?,?)",
+                   (quote_id, provider, ref, amount_cents, status, time.time(), time.time()))
+
+    def set_payment_status(self, ref, status):
+        self._exec("UPDATE payments SET status=?, updated_at=? WHERE provider_ref=?", (status, time.time(), ref))
+
+    # ---- SMS ----
+    def queue_sms(self, phone, body):
+        with _lock:
+            cur = self.conn.execute("INSERT INTO sms_outbox (created_at, to_phone, body, status) VALUES (?,?,?, 'queued')", (time.time(), phone, body))
+            self.conn.commit()
+            return cur.lastrowid
+
+    def queued_sms(self, limit=50):
+        return self._all("SELECT * FROM sms_outbox WHERE status='queued' ORDER BY id LIMIT ?", (limit,))
+
+    def list_sms(self, limit=30):
+        return self._all("SELECT id, created_at, to_phone, body, status, error FROM sms_outbox ORDER BY id DESC LIMIT ?", (limit,))
+
+    def mark_sms(self, sms_id, status, error=None):
+        self._exec("UPDATE sms_outbox SET status=?, error=? WHERE id=?", (status, error, sms_id))
+
+    def is_sms_optout(self, phone_hash):
+        return bool(self._all("SELECT 1 FROM sms_optout WHERE phone_hash=?", (phone_hash,)))
+
+    def add_sms_optout(self, phone_hash):
+        self._exec("INSERT OR IGNORE INTO sms_optout (phone_hash, created_at) VALUES (?,?)", (phone_hash, time.time()))
+
+    # ---- suivi chauffeur ----
+    def add_driver_link(self, token_hash, booking_id, expires_at):
+        self._exec("INSERT INTO driver_links (token_hash, booking_id, created_at, expires_at) VALUES (?,?,?,?)",
+                   (token_hash, booking_id, time.time(), expires_at))
+
+    def get_driver_link(self, token_hash):
+        rows = self._all("SELECT * FROM driver_links WHERE token_hash=?", (token_hash,))
+        return rows[0] if rows else None
+
+    def consent_driver_link(self, token_hash):
+        self._exec("UPDATE driver_links SET consent_at=COALESCE(consent_at, ?) WHERE token_hash=?", (time.time(), token_hash))
+
+    def revoke_driver_link(self, token_hash):
+        self._exec("UPDATE driver_links SET revoked=1 WHERE token_hash=?", (token_hash,))
+
+    def add_position(self, booking_id, lat, lon, accuracy):
+        self._exec("INSERT INTO driver_positions (booking_id, ts, lat, lon, accuracy) VALUES (?,?,?,?,?)", (booking_id, time.time(), lat, lon, accuracy))
+
+    def last_position(self, booking_id):
+        rows = self._all("SELECT ts, lat, lon, accuracy FROM driver_positions WHERE booking_id=? ORDER BY id DESC LIMIT 1", (booking_id,))
+        return rows[0] if rows else None
+
+    def purge_positions(self, older_than_s):
+        with _lock:
+            n = self.conn.execute("DELETE FROM driver_positions WHERE ts < ?", (time.time() - older_than_s,)).rowcount
+            self.conn.commit()
+        return n
 
     # ---- audit chaîné ----
     def audit(self, actor, action, detail=""):

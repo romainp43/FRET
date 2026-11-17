@@ -1,0 +1,46 @@
+{
+  "version": "2026-11-17",
+  "source": "tools/train_agents.py (marché simulé)",
+  "sourcing": {
+    "weights_normal": [
+      0.344,
+      0.228,
+      0.105,
+      0.323
+    ],
+    "weights_tight": [
+      0.254,
+      0.384,
+      0.022,
+      0.34
+    ]
+  },
+  "decision": {
+    "late_cost_ratio": 0.84,
+    "candidates": 5
+  },
+  "negotiation": {
+    "offers": [
+      0.872,
+      0.914,
+      0.957,
+      1.019
+    ],
+    "soft_target": 0.98
+  },
+  "report": {
+    "candidates_tried": 800,
+    "baseline_regret_test_pct": 7.39,
+    "tuned_regret_test_pct": 6.04,
+    "test_gain_pts": 1.35,
+    "test_gain_se": 0.08,
+    "valid_gain_pts": 1.41,
+    "adopted": true,
+    "agreement_rate_test": 0.995,
+    "worlds": {
+      "train": 500,
+      "valid": 1500,
+      "test": 2500
+    }
+  }
+}

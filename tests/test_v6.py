@@ -212,7 +212,7 @@ class Api(unittest.TestCase):
         body = {"quote_id": q["quote_id"], "accept_cgv": True, "pickup_address": "1 rue A, Lyon", "delivery_address": "2 rue B, Paris",
                 "goods": "palettes", "pickup_window": "08:00-12:00", "delivery_window": "09:00-17:00",
                 "site_contact_name": "Marie", "site_contact_phone": "0611223344",
-                "contact": {"name": "Jean", "company": "T SAS", "email": "j@t.fr", "phone": "0612345678"}}
+                "contact": {"name": "Jean", "company": "T SAS", "email": f"j{time.time_ns()}@t.fr", "phone": "0612345678"}}
         s, b = self.call("POST", "/api/book", body)
         self.assertEqual(s, 201, b)
         row = self.server.DB_.booking_by_code(b["tracking_code"])
@@ -322,7 +322,7 @@ class TrackingAndPayables(Api):
         body = {"quote_id": q["quote_id"], "accept_cgv": True, "pickup_address": "1 rue A, Lyon", "delivery_address": "2 rue B, Paris",
                 "goods": "palettes", "pickup_window": "08:00-12:00", "delivery_window": "09:00-17:00",
                 "site_contact_name": "Marie", "site_contact_phone": "0611223344",
-                "contact": {"name": "Jean", "company": "T SAS", "email": "j@t.fr", "phone": "0612345678"}}
+                "contact": {"name": "Jean", "company": "T SAS", "email": f"j{time.time_ns()}@t.fr", "phone": "0612345678"}}
         s, b = self.call("POST", "/api/book", body)
         self.assertEqual(s, 201, b)
         row = self.server.DB_.booking_by_code(b["tracking_code"])

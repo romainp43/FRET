@@ -117,7 +117,7 @@ $("book-form").addEventListener("submit", async (e) => {
   showError("book-error", "");
   if (!lastQuote) return;
   const body = {
-    quote_id: lastQuote.quote_id, accept_cgv: $("cgv").checked,
+    quote_id: lastQuote.quote_id, accept_cgv: $("cgv").checked, sms_consent: $("sms-consent").checked,
     website: document.querySelector("[name=website]").value,
     pickup_address: $("pickup-address").value, delivery_address: $("delivery-address").value, goods: $("goods").value,
     pickup_window: `${$("pw-start").value}-${$("pw-end").value}`,

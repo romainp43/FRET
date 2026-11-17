@@ -25,12 +25,15 @@ def expected_cost(price: float, reliability: float, ratio: float) -> float:
     return price * (1 + (1 - reliability) * ratio)
 
 
-def choose(quote, ranked: list, carriers_by_id: dict, max_candidates: int = MAX_CANDIDATES) -> dict:
-    ratio = tariff.load()["decision"]["late_cost_ratio"]
+def choose(quote, ranked: list, carriers_by_id: dict, max_candidates: int = MAX_CANDIDATES, truth_by_id=None,
+           ratio=None, offers=None, soft_target_mult=None, walk_away=None) -> dict:
+    from ..agent_config import CONFIG
+    ratio = CONFIG.get("late_cost_ratio", tariff.load()["decision"]["late_cost_ratio"]) if ratio is None else ratio
     table, accepted = [], []
     for cand in ranked[:max_candidates]:
         carrier = carriers_by_id[cand["carrier_id"]]
-        res = negotiation.negotiate(quote, cand, carrier)
+        res = negotiation.negotiate(quote, cand, carrier, truth=(truth_by_id or {}).get(carrier.id), offers=offers,
+                                    soft_target_mult=soft_target_mult, walk_away=walk_away)
         row = {"carrier": carrier.name, "carrier_id": carrier.id, "score": cand["score"], "accepted": res["accepted"],
                "price": res["price"], "reliability": carrier.reliability, "negotiation": res}
         if res["accepted"]:

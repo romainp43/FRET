@@ -27,7 +27,7 @@ SOCIAL_NOTE = ""
 def shell(title, desc, body, jsonld=None, script=None):
     nav = "".join(f'<a href="{u}">{E(t)}</a>' for u, t in NAV)
     ld = ("<script type=\"application/ld+json\">" + json.dumps(jsonld, ensure_ascii=False).replace("</", "<\\/") + "</script>") if jsonld else ""
-    js = f'<script src="{script}"></script>' if script else ""
+    js = "".join(f'<script src="{u}"></script>' for u in (["/common.js"] + [x for x in script.split(",")] if script and script != "/forms.js" else ([script] if script else [])))
     return f"""<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{E(title)} — FRETRAU</title><meta name="description" content="{E(desc)}"><link rel="stylesheet" href="/styles.css">{ld}</head>
@@ -41,7 +41,7 @@ def footer():
     return ('<footer><div class="wrap"><span>© FRETRAU</span><a href="/a-propos.html">À propos</a>'
             '<a href="/reclamation.html">Réclamation</a><a href="/legal/mentions-legales.html">Mentions légales</a>'
             '<a href="/legal/cgv.html">CGV</a><a href="/legal/cgu.html">CGU</a><a href="/legal/confidentialite.html">Confidentialité</a>'
-            '<a href="/legal/cookies.html">Cookies</a>'
+            '<a href="/legal/cookies.html">Cookies</a><a href="/confidentialite-choix.html">Vos choix</a><a href="/compte.html">Espace client</a><a href="/estimation.html">Estimation PTL / combiné</a>'
             '<span class="muted small">Données géographiques : GeoNames (CC BY 4.0) et geo.api.gouv.fr (Licence Ouverte).</span></div></footer>')
 
 
@@ -147,7 +147,7 @@ def carriers_page():
 def contact_page():
     topics = "".join(f'<option value="{k}">{E(v)}</option>' for k, v in [
         ("quote", "Demande de prix"), ("intermodal", "Combiné rail-route (sur devis)"), ("special", "Transport spécial / hors gabarit"),
-        ("account", "Compte entreprise / contrat annuel"), ("claim", "Question sur un envoi"), ("other", "Autre")])
+        ("account", "Compte entreprise / contrat annuel"), ("claim", "Question sur un envoi"), ("privacy", "Exercice de mes droits (données personnelles)"), ("other", "Autre")])
     body = f"""<h1>Parler à un expert</h1>
 <p class="lead2">Une question, un transport particulier, un contrat annuel : laissez-nous un message et un créneau de rappel, nous vous répondons.</p>
 <div class="row"><form id="contact-form" class="card" novalidate>
@@ -181,9 +181,67 @@ def claim_page():
     return shell("Réclamation", "Déclarer une avarie, un manque, une perte ou un retard.", body, None, "/forms.js")
 
 
+def driver_page():
+    body = """<h1>Partager ma position — livraison</h1>
+<p class="lead2">Votre position n'est envoyée que si vous appuyez sur « Accepter et partager », uniquement pendant cette livraison, et vous pouvez arrêter à tout moment. Elle est supprimée sous 30 jours.</p>
+<div class="card" id="drv-card"><p id="drv-status" class="muted" role="status">Vérification du lien…</p>
+<button id="drv-start" class="full hidden" type="button">Accepter et partager ma position</button>
+<button id="drv-stop" class="full alt hidden" type="button">Arrêter le partage</button>
+<div id="drv-error" class="err hidden" role="alert"></div></div>
+<p class="muted small">Gardez cette page ouverte pendant la route. Nous ne collectons ni votre nom ni votre numéro. Aucune position n'est transmise sans votre accord.</p>"""
+    return shell("Partage de position chauffeur", "Partager sa position pour une livraison FRETRAU.", body, None, "/chauffeur.js")
+
+
+def account_page():
+    body = """<h1>Mon espace client</h1>
+<p class="lead2">Retrouvez vos envois. Pas de mot de passe : un code à 6 chiffres vous est envoyé par e-mail.</p>
+<form id="acct-form" class="card" novalidate>
+<label for="a-email">E-mail utilisé pour vos réservations</label><input id="a-email" name="email" type="email" autocomplete="email" required>
+<button id="acct-send" class="full" type="submit">Recevoir mon code</button>
+<div id="acct-code-box" class="hidden"><label for="a-code">Code reçu par e-mail</label><input id="a-code" name="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+<button id="acct-verify" class="full" type="button">Me connecter</button></div>
+<div id="acct-msg" class="muted" role="status"></div><div id="acct-error" class="err hidden" role="alert"></div></form>
+<div id="acct-list"></div>"""
+    return shell("Mon espace client", "Consultez vos envois FRETRAU.", body, None, "/compte.js")
+
+
+def estimate_page():
+    body = """<h1>Estimation lot partiel et combiné rail-route</h1>
+<p class="lead2">Ces deux modes ne se réservent pas en ligne : voici une fourchette indicative, puis nous vous envoyons un devis ferme après étude.</p>
+<form id="est-form" class="card" novalidate>
+<label for="e-kind">Mode</label><select id="e-kind" name="kind"><option value="PTL">Lot partiel (quelques palettes)</option><option value="IM">Combiné rail-route (à partir de 600 km)</option></select>
+<div class="row"><div><label for="e-o">Départ (ville)</label><input id="e-o" name="origin" required autocomplete="off"></div><div><label for="e-d">Arrivée (ville)</label><input id="e-d" name="destination" required autocomplete="off"></div></div>
+<div class="row"><div><label for="e-p">Palettes</label><input id="e-p" name="pallets" type="number" min="1" max="33" value="6"></div><div><label for="e-w">Poids (kg)</label><input id="e-w" name="weight_kg" type="number" min="1" value="2500"></div></div>
+<button class="full" type="submit">Estimer</button><div id="est-error" class="err hidden" role="alert"></div></form>
+<div id="est-result"></div>
+<p class="muted small">Fourchette sans engagement, basée sur des hypothèses de travail (pas encore sur des tarifs de marché). <a href="/contact.html">Demander un devis ferme</a>.</p>"""
+    return shell("Estimation indicative", "Estimation lot partiel ou combiné rail-route.", body, None, "/estimate.js")
+
+
+def privacy_choices_page():
+    body = """<h1>Vos choix de confidentialité</h1>
+<div class="card"><h2>Ne plus recevoir de SMS</h2>
+<p>Entrez votre numéro : nous cessons immédiatement tout SMS vers ce numéro (les e-mails de service liés à un transport en cours restent envoyés).</p>
+<form id="stop-form" novalidate><div class="hp" aria-hidden="true"><label>Ne pas remplir<input name="website" tabindex="-1" autocomplete="off"></label></div>
+<label for="s-phone">Téléphone</label><input id="s-phone" name="phone" type="tel" autocomplete="tel" required>
+<button class="full" type="submit">Arrêter les SMS</button><div id="stop-msg" class="muted" role="status"></div><div id="stop-error" class="err hidden" role="alert"></div></form></div>
+<div class="card"><h2>Accéder à mes données, les corriger ou les supprimer</h2><p>Faites une demande via le <a href="/contact.html">formulaire de contact</a> en choisissant le sujet « Exercice de mes droits ». Nous répondons sous un mois.</p></div>
+<div class="card"><h2>Cookies et traceurs</h2><p>FRETRAU n'utilise aucun traceur publicitaire ni outil de mesure d'audience tiers. Voir la <a href="/legal/cookies.html">page cookies</a>.</p></div>"""
+    return shell("Choix de confidentialité", "Gérer vos SMS et exercer vos droits.", body, None, "/privacy.js")
+
+
+def tracking_page():
+    body = """<h1>Suivre un envoi</h1>
+<form id="track-form" class="card row" novalidate><input id="track-code" placeholder="FR-XXXXXXXXXXXX" aria-label="Code de suivi" autocomplete="off"><button type="submit">Suivre</button></form>
+<div id="track-error" class="err hidden" role="alert"></div><div id="track-result"></div>
+<p class="muted small">Un problème sur un envoi ? <a href="/reclamation.html">Déclarez-le ici</a>. Retrouver tous vos envois : <a href="/compte.html">espace client</a>.</p>"""
+    return shell("Suivi d'envoi", "Suivez votre envoi FRETRAU avec son code.", body, None, "/suivi.js")
+
+
 def pages():
     out = {"a-propos.html": about(), "secteurs.html": sectors(), "faq.html": faq_page(), "transporteurs.html": carriers_page(),
-           "contact.html": contact_page(), "reclamation.html": claim_page()}
+           "contact.html": contact_page(), "reclamation.html": claim_page(), "chauffeur.html": driver_page(), "compte.html": account_page(),
+           "estimation.html": estimate_page(), "confidentialite-choix.html": privacy_choices_page(), "suivi.html": tracking_page()}
     for slug, s in C.SERVICES.items():
         out[f"services/{slug}.html"] = service_page(slug, s)
     return out

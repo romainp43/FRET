@@ -127,7 +127,9 @@ def _route(text):
             if city_a == city_b:
                 continue
             a, b = re.escape(pa), re.escape(pb)
-            if re.search(rf"(?:de|depuis|from|au depart de|depart)\s+(?:\d{{5}}\s+)?{a}(?:\s+\d{{5}})?\s*(?:,|:)?\s*{arrow}\s+(?:\d{{5}}\s+)?{b}", n) or \
+            if re.search(rf"(?:vers|a destination de|livrer a|livraison a|livraison de)\s+(?:\d{{5}}\s+)?{b}[^.;\n]{{0,40}}?(?:depuis|au depart de|en provenance de)\s+(?:\d{{5}}\s+)?{a}\b", n) or \
+               re.search(rf"(?:depart|chargement|enlevement|origine)[^.\n]{{0,15}}?{a}[^.\n]{{0,40}}?(?:livraison|arrivee|destination)[^.\n]{{0,15}}?{b}", n) or \
+               re.search(rf"(?:de|depuis|from|au depart de|depart)\s+(?:\d{{5}}\s+)?{a}(?:\s+\d{{5}})?\s*(?:,|:)?\s*{arrow}\s+(?:\d{{5}}\s+)?{b}", n) or \
                re.search(rf"{a}(?:\s+\d{{5}})?\s*(?:->|→|=>|>|-)\s*(?:\d{{5}}\s+)?{b}", n) or re.search(rf"{a}(?:\s+\d{{5}})?\s+(?:vers|to)\s+(?:\d{{5}}\s+)?{b}", n):
                 pairs.append((city_a, city_b))
     pairs = list(dict.fromkeys(pairs))
@@ -145,7 +147,7 @@ def _route(text):
 
 
 def _weight(n):
-    m = re.search(r"(\d[\d\s\.,]*)\s*(kg|kgs|kilos?|tonnes?|t)\b", n)
+    m = re.search(r"(\d{1,3}(?:[ \u00a0.]\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)\s*(kg|kgs|kilos?|tonnes?|t)\b", n)
     if not m:
         return None
     raw = m.group(1).strip().replace(" ", "")
@@ -161,41 +163,117 @@ def _weight(n):
     return v
 
 
-def _date(n, today: date):
-    if re.search(r"apres[- ]demain", n):
-        return today + timedelta(days=2), None
-    if re.search(r"\bdemain\b", n):
-        return today + timedelta(days=1), None
-    m = re.search(r"\b(20\d{2})-(\d{2})-(\d{2})\b", n)
-    if m:
+MONTHS = {"janvier": 1, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5, "juin": 6, "juillet": 7, "aout": 8,
+          "septembre": 9, "octobre": 10, "novembre": 11, "decembre": 12}
+_MONTH_RE = "|".join(MONTHS)
+DELIVERY_CUE = re.compile(r"(livr\w*|arrive\w*|au plus tard)[^,.;\n]{0,25}$")
+
+
+def _clean(text: str) -> str:
+    """Retire les parties citées d'un e-mail (lignes « > », « X a écrit : », message d'origine) : leurs dates et villes ne sont pas la demande."""
+    out = []
+    for line in text.splitlines():
+        low = line.strip().lower()
+        if re.match(r"^-{2,}\s*(original message|message d'origine|message transfere)", _norm(low)) or re.match(r"^(de|from)\s*:", low):
+            break
+        if low.startswith(">") or re.search(r"a ecrit\s*:\s*$", _norm(low)):
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def _dates(n, today: date):
+    """Toutes les dates citées, dans l'ordre : [(date, est_livraison, note)]. Une date précédée de « livraison… »/« au plus tard »
+    (sans virgule entre les deux) est une date de livraison, pas d'enlèvement."""
+    found = []
+
+    def add(pos, d, note=None):
+        found.append((pos, d, bool(DELIVERY_CUE.search(n[max(0, pos - 40):pos])), note))
+
+    for m in re.finditer(r"apres[- ]demain", n):
+        add(m.start(), today + timedelta(days=2))
+    for m in re.finditer(r"\bdemain\b", n):
+        if not re.match(r"apres", n[max(0, m.start() - 6):m.start()]):
+            add(m.start(), today + timedelta(days=1))
+    for m in re.finditer(r"\b(20\d{2})-(\d{2})-(\d{2})\b", n):
         try:
-            return date(int(m[1]), int(m[2]), int(m[3])), None
+            add(m.start(), date(int(m[1]), int(m[2]), int(m[3])))
         except ValueError:
-            return None, "Date invalide."
-    m = re.search(r"\b(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?\b", n)
-    if m:
-        d, mo = int(m[1]), int(m[2])
+            return [(None, False, "Date invalide.")]
+    spans = []
+    for m in re.finditer(rf"\b(\d{{1,2}})\s*(?:er)?\s+({_MONTH_RE})\b(?:\s+(20\d{{2}}))?", n):
+        d_, mo = int(m[1]), MONTHS[m[2]]
+        y = int(m[3]) if m[3] else today.year
+        try:
+            res = date(y, mo, d_)
+        except ValueError:
+            return [(None, False, "Date invalide.")]
+        note = None
+        if not m[3] and res < today:
+            res = date(y + 1, mo, d_)
+            note = f"Année supposée : {res.year}."
+        add(m.start(), res, note)
+        spans.append((m.start(), m.end()))
+    for m in re.finditer(r"\b(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?\b", n):
+        if re.match(r"\d{4}-", n[m.start():m.start() + 5]):
+            continue
+        d_, mo = int(m[1]), int(m[2])
         y = int(m[3]) if m[3] else today.year
         y += 2000 if y < 100 else 0
         try:
-            res = date(y, mo, d)
+            res = date(y, mo, d_)
         except ValueError:
-            return None, "Date invalide."
+            return [(None, False, "Date invalide.")]
         note = None
         if not m[3] and res < today:                       # « 05/01 » écrit en novembre : année suivante
-            res = date(y + 1, mo, d)
+            res = date(y + 1, mo, d_)
             note = f"Année supposée : {res.year}."
-        return res, note
-    for name, wd in WEEKDAYS.items():
-        if re.search(rf"\b{name}\b", n):
-            delta = (wd - today.weekday()) % 7 or 7
-            return today + timedelta(days=delta), f"« {name} » interprété comme le prochain {name} ({(today + timedelta(days=delta)).isoformat()})."
+        add(m.start(), res, note)
+    if not found:
+        for name, wd in WEEKDAYS.items():
+            for m in re.finditer(rf"\b{name}\b", n):
+                delta = (wd - today.weekday()) % 7 or 7
+                d_ = today + timedelta(days=delta)
+                add(m.start(), d_, f"« {name} » interprété comme le prochain {name} ({d_.isoformat()}).")
+    elif not any(not f[2] for f in found):
+        pass
+    found.sort(key=lambda f: f[0] if f[0] is not None else 0)
+    return [(f[1], f[2], f[3]) for f in found]
+
+
+def _date(n, today: date):
+    """Date d'enlèvement : la première date qui n'est pas une date de livraison."""
+    for d_, is_delivery, note in _dates(n, today):
+        if d_ is None:
+            return None, note
+        if not is_delivery:
+            return d_, note
     return None, None
+
+
+def _deliver_by(n, today: date):
+    for d_, is_delivery, _ in _dates(n, today):
+        if d_ is not None and is_delivery:
+            return d_
+    return None
+
+
+NEG_BEFORE = re.compile(r"(sans|pas de|pas d'|aucun|aucune|ni|non)\b[^,.;\n]{0,15}$")
+NEG_AFTER = re.compile(r"^[^,.;\n]{0,20}?(non (requis|necessaire|obligatoire|souhaite)|pas (necessaire|requis|besoin|obligatoire)|inutile|exclu)")
+
+
+def _flag(n, pattern):
+    """Vrai si l'option est demandée : au moins une mention non niée (« sans hayon », « hayon non requis » ne comptent pas)."""
+    for m in re.finditer(pattern, n):
+        if NEG_BEFORE.search(n[max(0, m.start() - 22):m.start()]) or NEG_AFTER.match(n[m.end():m.end() + 30]):
+            continue
+        return True
+    return False
 
 
 def parse(text: str, today: date = None) -> dict:
     today = today or date.today()
-    text = (text or "")[:5000]
+    text = _clean((text or "")[:5000])
     origin, destination, route_note = _route(text)
     n = _norm(text)
     assumptions, fields = [], {}
@@ -215,6 +293,7 @@ def parse(text: str, today: date = None) -> dict:
         fields["pickup_date"] = pickup.isoformat()
     if dnote:
         assumptions.append(dnote)
+    options_flatbed = _flag(n, r"\bplateau\b|savoyarde|porte[- ]?engins?|semi plateau")
     # mode
     full = re.search(r"camion complet|lot complet|\bftl\b|complet", n)
     part = re.search(r"messagerie|groupage|\bltl\b|lot partiel", n)
@@ -222,6 +301,9 @@ def parse(text: str, today: date = None) -> dict:
         fields["mode"] = "FTL"
     elif part and not full:
         fields["mode"] = "LTL"
+    elif options_flatbed and pallets is None:
+        fields["mode"] = "FTL"
+        assumptions.append("Plateau : commandé en camion complet (le plateau n'existe pas en groupage).")
     elif pallets is not None and pallets <= 12:
         fields["mode"] = "LTL"
         assumptions.append("Mode « palettes (messagerie) » déduit du nombre de palettes ; indiquez « camion complet » si besoin.")
@@ -229,21 +311,16 @@ def parse(text: str, today: date = None) -> dict:
         fields["mode"] = "FTL"
         assumptions.append("Mode « camion complet » déduit du nombre de palettes (13 ou plus).")
     options = {
-        "adr": bool(re.search(r"\badr\b|matieres? dangereuses?|marchandises? dangereuses?", n)),
-        "temperature": bool(re.search(r"temperature dirigee|frigo|refrigere|froid|reefer|\+4|\bsurgele", n)),
-        "tail_lift": bool(re.search(r"hayon", n)),
-        "urgent": bool(re.search(r"urgent|express|au plus vite|asap", n)),
-        "flatbed": bool(re.search(r"\bplateau\b|savoyarde|porte[- ]?engins?|semi plateau", n)),
+        "adr": _flag(n, r"\badr\b|matieres? dangereuses?|marchandises? dangereuses?"),
+        "temperature": _flag(n, r"temperature dirigee|frigo|refrigere|\bfroid\b|reefer|\+4|\bsurgele"),
+        "tail_lift": _flag(n, r"hayon"),
+        "urgent": _flag(n, r"urgent|express|au plus vite|asap"),
+        "flatbed": _flag(n, r"\bplateau\b|savoyarde|porte[- ]?engins?|semi plateau"),
     }
     fields["options"] = {k: v for k, v in options.items() if v}
-    ld = re.search(r"livr\w*\s+(?:au plus tard\s+)?(?:le\s+)?(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?", n)
-    if ld and pickup:
-        y = int(ld[3]) if ld[3] else pickup.year
-        y += 2000 if y < 100 else 0
-        try:
-            fields["deliver_by"] = date(y, int(ld[2]), int(ld[1])).isoformat()
-        except ValueError:
-            pass
+    db_ = _deliver_by(n, today)
+    if db_ and pickup:
+        fields["deliver_by"] = db_.isoformat()
     missing = []
     if not (origin and destination):
         missing.append("villes de départ et d'arrivée")

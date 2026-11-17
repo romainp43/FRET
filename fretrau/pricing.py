@@ -186,3 +186,39 @@ def build_quote(origin, destination, mode, pallets, weight_kg, options=None, pic
         taxable_units=est["units"], cost_low=est["low"], cost_high=est["high"], uncertainty=est["uncertainty"],
         warnings=est["warnings"], tariff_version=t["version"], km_source=routing.distance(origin, destination)[1],
         earliest_delivery=earliest)
+
+
+def indicative(kind, origin, destination, pallets, weight_kg, pickup=None):
+    """ESTIMATION non réservable pour le lot partiel (PTL) et le combiné rail-route (IM). Hypothèses : tariff.json → « indicative »."""
+    t = tariff.load()
+    ind = t["indicative"]
+    if kind not in ("PTL", "IM"):
+        raise QuoteError("Type d'estimation invalide.")
+    if not geo.known(origin) or not geo.known(destination) or origin == destination:
+        raise QuoteError("Départ et arrivée invalides.")
+    served = {c for c in t["country_cost_index"] if len(c) == 2}
+    if geo.country(origin) not in served or geo.country(destination) not in served:
+        raise QuoteError("Pays non desservi pour l'instant.")
+    if isinstance(weight_kg, bool) or not isinstance(weight_kg, (int, float)) or not 1 <= weight_kg <= FTL_MAX_KG:
+        raise QuoteError(f"Poids invalide (1 à {FTL_MAX_KG} kg).")
+    km = routing.distance(origin, destination)[0]
+    ftl = _ftl_base(t, km, _country_factor(t, origin, destination))
+    unc = ind["uncertainty_ptl"] if kind == "PTL" else ind["uncertainty_im"]
+    notes = ["Estimation indicative non réservable en ligne : un devis ferme vous est envoyé après étude."]
+    if kind == "PTL":
+        if isinstance(pallets, bool) or not isinstance(pallets, int) or not 1 <= pallets <= MAX_PALLETS:
+            raise QuoteError("Nombre de palettes invalide (1 à 33).")
+        share = max(pallets * ind["ldm_per_pallet"] / ind["trailer_ldm"], weight_kg / FTL_MAX_KG)
+        mid = ftl * min(ind["ptl_max_share"], max(ind["ptl_min_share"], share * ind["ptl_factor"]))
+        transit = calendar_fr.transit_days(km)
+    else:
+        if km < ind["im_min_km"]:
+            raise QuoteError(f"Le combiné rail-route n'est pertinent qu'à partir de {ind['im_min_km']} km : choisissez le camion complet.")
+        mid = ftl * ind["im_factor"] + ind["im_terminal_eur"]
+        transit = calendar_fr.transit_days(km) + ind["im_extra_transit_days"]
+        notes.append("Délais plus longs et horaires de trains : à confirmer. Le combiné n'est pas toujours moins cher que la route.")
+    m = t["margin"]
+    sell = lambda cost: round(cost * (1 + m["target"] + m["risk_premium_share"] * unc), 2)  # noqa: E731
+    return {"kind": kind, "origin": origin, "destination": destination, "distance_km": km, "transit_days": transit,
+            "price_ht_low": sell(mid * (1 - unc)), "price_ht_mid": sell(mid), "price_ht_high": sell(mid * (1 + unc)),
+            "uncertainty": unc, "bookable": False, "confidence": ind["confidence"], "notes": notes}

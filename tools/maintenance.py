@@ -27,7 +27,14 @@ def run(db, retention_years=5):
         "bookings_anonymized": db.anonymize_older_than(int(retention_years * 365 * DAY)),
         "outbox_purged": db.purge_outbox(90 * DAY),
         "leads_purged": db.purge_leads(365 * DAY),
+        "positions_purged": db.purge_positions(30 * DAY),
     }
+    try:                                                  # veille des retards (le serveur peut aussi la lancer à la demande)
+        from datetime import datetime
+        from fretrau import watch_run
+        res["watchtower"] = watch_run.run(db, datetime.now(), os.environ.get("FRETRAU_PUBLIC_URL", ""), os.environ.get("FRETRAU_SECRET", ""))
+    except Exception as e:
+        res["watchtower"] = {"error": str(e)[:80]}
     ok, bad = db.verify_audit_chain()
     res["audit_intact"] = ok
     res["audit_first_bad_id"] = bad
