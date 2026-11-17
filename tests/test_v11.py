@@ -1,4 +1,4 @@
-import json, os, sys, threading, unittest, urllib.request, urllib.error
+import json, os, sys, threading, time, unittest, urllib.request, urllib.error
 from datetime import date, timedelta
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -184,7 +184,7 @@ class Outcomes(unittest.TestCase):
             routing._save_disk()
             routing._cache.clear()
             routing._load_disk()
-            self.assertEqual(routing._cache, {("A", "B"): (123.4, "osrm")})
+            self.assertEqual(routing._cache, {("A", "B"): (123.4, "route")})
             routing._cache.clear()
 
     def test_db_outcome_roundtrip(self):
@@ -204,3 +204,40 @@ class Outcomes(unittest.TestCase):
         r = outcomes.report(rows)
         self.assertEqual(r["realized_margin_ht"], 170.0)
         self.assertEqual(r["on_time_rate"], 0.0)
+
+
+class OrsRouting(unittest.TestCase):
+    def test_ors_used_then_cached_and_quota_respected(self):
+        import io, urllib.request as ur
+        from fretrau import routing, geo
+        calls = []
+
+        class Resp(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def fake(req, timeout=0):
+            calls.append(req.full_url)
+            self.assertIn("driving-hgv", req.full_url)
+            self.assertNotIn("api_key", req.full_url)                        # la clé ne voyage jamais dans l'URL
+            return Resp(json.dumps({"routes": [{"summary": {"distance": geo.haversine_km("Lyon", "Paris") * 1.15 * 1000}}]}).encode())
+        real, routing._cache, hits = ur.urlopen, {}, list(routing._ors_hits)
+        os.environ["FRETRAU_ORS_KEY"] = "cle-de-test"
+        routing.CACHE_FILE = os.path.join(os.environ.get("TMPDIR", "/tmp"), "fretrau_test_routes.json")
+        ur.urlopen = fake
+        try:
+            routing._ors_hits[:] = []
+            km, src = routing.distance("Lyon", "Paris")
+            self.assertEqual(src, "ors")
+            routing.distance("Paris", "Lyon")
+            self.assertEqual(len(calls), 1)                                  # second appel servi par le cache
+            routing._cache.clear()
+            routing._ors_hits[:] = [time.time()] * routing.ORS_PER_MIN       # quota par minute atteint
+            self.assertEqual(routing.distance("Lyon", "Paris")[1], "estimation")
+        finally:
+            ur.urlopen = real
+            os.environ.pop("FRETRAU_ORS_KEY", None)
+            routing._ors_hits[:] = hits
+            routing._cache.clear()
+            if os.path.exists(routing.CACHE_FILE):
+                os.remove(routing.CACHE_FILE)

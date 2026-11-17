@@ -149,3 +149,12 @@ Le référentiel complet n'est PAS dans le ZIP (fichier volumineux, licences à 
 - Le devis propose la formule inverse (Express ou Standard), calculée par la même grille. Ce ne sont pas des offres de transporteurs distincts.
 - Nouvelles options : livraison sur rendez-vous (20 €) et chez un particulier (35 €). Ces deux montants sont des estimations de départ à confirmer auprès de vrais transporteurs.
 - Logo, favicon, illustration de camion, page 404, robots.txt.
+
+## Itinéraires poids lourd (gratuit)
+
+1. Créez un compte gratuit sur https://account.heigit.org et générez une clé (« token »).
+2. Sous Windows, dans l'invite de commandes du dossier `fret` : `set FRETRAU_ORS_KEY=votre_cle` puis `py server.py`.
+3. Facultatif : `py tools/warm_routes.py` précalcule les distances entre les villes principales (quota gratuit : 2 000 itinéraires/jour, 40/minute ; relançable le lendemain).
+
+Sans clé, le site utilise l'estimation (signalée sur le devis). Ne mettez jamais la clé dans un fichier du dépôt.
+Suivi des résultats réels : POST /api/admin/outcome (coût réel HT, à l'heure oui/non) puis GET /api/admin/outcomes.

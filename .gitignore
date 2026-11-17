@@ -9,3 +9,4 @@ data/*.db
 
 !seed/
 !seed/places.db.gz
+data/routes_osrm.json
