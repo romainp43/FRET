@@ -20,8 +20,8 @@ from legal_texts import PAGES, VERSION  # noqa: E402
 PLACEHOLDER = re.compile(r"\[À COMPLÉTER[^\]]*\]")
 TEMPLATE = """<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title} — FRETRAU</title><link rel="stylesheet" href="/styles.css"></head>
-<body class="legal"><header class="top"><div class="wrap"><a class="brand" href="/">FRET<b>RAU</b></a>
+<title>{title} — FRETRAU</title><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="stylesheet" href="/styles.css"></head>
+<body class="legal"><header class="top"><div class="wrap"><a class="brand" href="/"><img src="/logo-mark.svg" alt="" width="28" height="28">FRET<b>RAU</b></a>
 <nav>{nav}</nav></div></header>
 <main class="wrap legal-body"><h1>{title}</h1><p class="muted">Version du {version}</p>{body}</main>
 <footer><div class="wrap">{nav}</div></footer></body></html>

@@ -20,8 +20,23 @@ des commissionnaires de transport : [[transport_licence]]. Assurance responsabil
 <h2>Hébergeur</h2>
 <p>[[host_name]], [[host_address]], téléphone : [[host_phone]].</p>
 <h2>Propriété intellectuelle</h2>
-<p>La marque, le nom, les textes, le code, les graphismes et les bases de données du site sont protégés. Toute reproduction
-ou extraction non autorisée est interdite.</p>
+<p>Le nom <strong>FRETRAU</strong>, son logo, les textes, les illustrations, le code et la structure du site sont la propriété de
+[[brand]] ou de ses concédants et sont protégés par le Code de la propriété intellectuelle (droit d'auteur, droit des
+marques, droit des bases de données). [À COMPLÉTER : n° et date du dépôt INPI de la marque FRETRAU, classes 35, 39 et 42 — à
+supprimer tant que le dépôt n'est pas effectué ; ne pas utiliser le symbole ® avant l'enregistrement]. Toute reproduction,
+représentation, adaptation ou extraction substantielle du contenu ou de la base de données, sans autorisation écrite
+préalable, est interdite et constitue une contrefaçon (art. L335-2 et L342-1 du Code de la propriété intellectuelle).</p>
+<h2>Crédits et licences</h2>
+<p>Les données géographiques proviennent de GeoNames (licence Creative Commons Attribution 4.0) et de geo.api.gouv.fr
+(Licence Ouverte 2.0, Etalab), et ont été adaptées pour le calcul des distances. Les marques et noms de tiers cités sur
+le site appartiennent à leurs titulaires respectifs et ne sont cités qu'à titre d'information.</p>
+<h2>Liens hypertextes</h2>
+<p>Les liens vers le site sont autorisés s'ils ne portent pas atteinte à son image et n'induisent pas en erreur sur
+l'origine du service (pas de reprise dans un cadre, pas de confusion avec la marque). Nous ne contrôlons pas les sites tiers
+vers lesquels le site pourrait renvoyer et déclinons toute responsabilité à leur égard.</p>
+<h2>Signalement d'un contenu illicite</h2>
+<p>Tout contenu manifestement illicite ou portant atteinte à vos droits peut être signalé à [[email]], en indiquant
+l'adresse de la page concernée et le motif (art. 6 de la loi n° 2004-575 du 21 juin 2004 pour la confiance dans l'économie numérique).</p>
 <h2>Données personnelles</h2>
 <p>Voir la <a href="/legal/confidentialite.html">politique de confidentialité</a> et la
 <a href="/legal/cookies.html">politique cookies</a>.</p>
@@ -59,9 +74,10 @@ du RGPD est conclu avec chacun.</p>
 portent sur des données de transport et non sur le profilage de personnes. Les décisions de prix et d'affectation sont
 prises par des règles de calcul vérifiables ; lorsque la situation sort du cadre (valeur élevée, prix anormal,
 absence d'accord), un opérateur humain intervient. Vous pouvez demander l'intervention d'un humain, exprimer votre point
-de vue et contester une décision à [[dpo_email]]. Si un modèle de langage est utilisé pour rédiger des messages,
-aucune donnée d'identité (nom, e-mail, téléphone, adresse précise) ne lui est transmise : seuls des faits de transport
-(villes, mode, montant) lui sont communiqués.</p>
+de vue et contester une décision à [[dpo_email]]. Si un modèle de langage (API Claude, société Anthropic, États-Unis) est
+activé pour rédiger des messages, aucune donnée d'identité (nom, e-mail, téléphone, adresse précise) ne lui est transmise :
+seuls des faits de transport non personnels (villes, mode, montant) lui sont communiqués. Il ne décide ni d'un prix ni
+d'une affectation.</p>
 
 <h2>4. Transferts hors Union européenne</h2>
 <p>Vos données sont hébergées dans l'Union européenne. Aucun transfert hors UE n'est effectué par défaut. Si un
@@ -111,7 +127,10 @@ pas confirmés par écrit.</p>
 <p>Le code de suivi donne accès au statut de l'expédition. Conservez-le : toute personne qui le détient peut consulter ce
 statut. Il ne donne pas accès aux données personnelles du donneur d'ordre.</p>
 <h2>6. Propriété intellectuelle</h2>
-<p>Le site, son code, ses textes, sa marque et ses bases de données sont la propriété de [[name]]. Aucun droit n'est cédé.</p>
+<p>Le site, son code, ses textes, ses illustrations, sa marque et ses bases de données sont la propriété de [[name]] ou de
+ses concédants. Aucun droit n'est cédé. L'accès au site confère un simple droit d'usage personnel, non exclusif et non
+cessible, pour obtenir des devis et suivre des expéditions. Les informations que vous saisissez restent les vôtres :
+vous nous autorisez à les utiliser uniquement pour fournir le service, selon la politique de confidentialité.</p>
 <h2>7. Responsabilité</h2>
 <p>Nous ne répondons pas des interruptions du site, des indisponibilités imputables à un tiers ou à un cas de force
 majeure, ni de l'usage fait des informations du site, dans les limites autorisées par la loi.</p>
