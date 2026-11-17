@@ -1,5 +1,5 @@
 # Image minimale, non-root. Aucune dépendance Python externe (bibliothèque standard uniquement).
-FROM python:3.13-slim
+FROM python:3.15-slim
 RUN useradd --system --uid 10001 --no-create-home fretrau && mkdir /data && chown fretrau /data
 WORKDIR /app
 COPY --chown=root:root . /app
