@@ -30,8 +30,8 @@ def shell(title, desc, body, jsonld=None, script=None):
     js = "".join(f'<script src="{u}"></script>' for u in (["/common.js"] + [x for x in script.split(",")] if script and script != "/forms.js" else ([script] if script else [])))
     return f"""<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{E(title)} — FRETRAU</title><meta name="description" content="{E(desc)}"><link rel="stylesheet" href="/styles.css">{ld}</head>
-<body class="legal"><header class="top"><div class="wrap"><a class="brand" href="/">FRET<b>RAU</b></a><nav>{nav}</nav></div></header>
+<title>{E(title)} — FRETRAU</title><meta name="description" content="{E(desc)}"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles.css">{ld}</head>
+<body class="legal"><header class="top"><div class="wrap"><a class="brand" href="/"><img src="/logo-mark.svg" alt="" width="28" height="28">FRET<b>RAU</b></a><nav>{nav}</nav></div></header>
 <main class="wrap page">{body}</main>
 {footer()}{js}</body></html>
 """

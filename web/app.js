@@ -118,6 +118,9 @@ function renderQuote(q, body) {
   $("result-section").scrollIntoView({ behavior: "smooth" });
 }
 
+const cargoSel = $("cargo");
+if (cargoSel) cargoSel.addEventListener("change", () => { const g = $("goods"); if (g && !g.value && cargoSel.value && cargoSel.value !== "Autre") g.value = cargoSel.value; });
+
 $("book-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   showError("book-error", "");

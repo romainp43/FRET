@@ -5,12 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FRETRAU — Fret routier France & Europe, devis instantané</title>
   <meta name="description" content="Obtenez un prix de transport routier en quelques secondes, réservez et suivez votre expédition en France et en Europe.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <header class="top">
     <div class="wrap">
-      <a class="brand" href="/">FRET<b>RAU</b></a>
+      <a class="brand" href="/"><img src="/logo-mark.svg" alt="" width="28" height="28">FRET<b>RAU</b></a>
       <nav><a href="#services">Services</a><a href="/secteurs.html">Secteurs</a><a href="/faq.html">Questions fréquentes</a><a href="/transporteurs.html">Transporteurs</a><a href="/contact.html">Contact</a><a href="#suivi">Suivre un envoi</a></nav>
     </div>
   </header>
@@ -19,6 +20,7 @@
     <section class="hero">
       <div class="wrap grid">
         <div>
+          <p class="tagline">Un prix, un camion, un suivi.</p>
           <h1>Votre transport routier, <em>au prix juste</em>, en quelques clics.</h1>
           <p class="lead">Camion complet ou palettes, France et Europe : un prix immédiat, des transporteurs vérifiés et un suivi de bout en bout.</p>
           <div class="badges">
@@ -44,6 +46,15 @@
               <div><label for="pallets" id="pallets-label">Palettes (facultatif)</label><input id="pallets" type="number" min="1" max="33" inputmode="numeric"></div>
               <div><label for="weight">Poids total (kg)</label><input id="weight" type="number" min="1" max="24000" required inputmode="numeric"></div>
             </div>
+            <label for="cargo">Que transportez-vous ?</label>
+            <select id="cargo">
+              <option value="">Marchandise générale</option>
+              <option value="Produits alimentaires">Produits alimentaires</option>
+              <option value="Matériaux de construction">Matériaux de construction</option>
+              <option value="Produits industriels / pièces">Produits industriels / pièces</option>
+              <option value="Produits fragiles ou de valeur">Produits fragiles ou de valeur</option>
+              <option value="Autre">Autre (précisez à la réservation)</option>
+            </select>
             <div class="row">
               <div><label for="pickup">Date d'enlèvement</label><input id="pickup" type="date" required></div>
               <div><label for="deliver-by">Livraison au plus tard (facultatif)</label><input id="deliver-by" type="date"></div>

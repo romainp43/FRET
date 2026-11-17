@@ -17,6 +17,9 @@ header.top { background: var(--ink); color: #fff; }
 header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; }
 .brand { font-weight: 800; letter-spacing: .14em; font-size: 20px; color: #fff; text-decoration: none; }
 .brand b { color: var(--accent); }
+.brand { display: inline-flex; align-items: center; gap: 10px; }
+.brand img { display: block; border-radius: 7px; }
+.tagline { font-weight: 700; color: var(--accent-d); letter-spacing: .02em; margin: 0 0 8px; }
 nav a { color: #c9d4df; text-decoration: none; margin-left: 22px; font-size: 15px; }
 nav a:hover { color: #fff; }
 
