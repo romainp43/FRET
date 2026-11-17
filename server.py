@@ -61,6 +61,9 @@ RL_ACCT = security.RateLimiter(5, 900)
 
 DB_ = DB(os.environ.get("FRETRAU_DB", os.path.join(ROOT, "fretrau.db")))
 RL_GLOBAL = security.RateLimiter(120, 60)
+ADR_CLASSES = {"1", "2", "3", "4", "5", "6", "7", "8", "9"}
+LOADING_ACCESS = {"rear": "Par l'arrière", "side": "Par le côté", "top": "Par le haut"}
+SITE_EQUIPMENT = {"forklift": "Chariot élévateur sur site", "pallet_jack": "Transpalette sur site", "none": "Aucun moyen de manutention"}
 TEMPERATURE_RANGES = {"+2/+4 °C": "Frais (+2 à +4 °C)", "0/+2 °C": "Frais (0 à +2 °C)", "-18 °C": "Surgelé (−18 °C)", "-25 °C": "Surgelé (−25 °C)", "+15/+25 °C": "Tempéré (+15 à +25 °C)"}
 RL_QUOTE = security.RateLimiter(20, 60)
 RL_BOOK = security.RateLimiter(5, 600)
@@ -209,7 +212,7 @@ class Handler(BaseHTTPRequestHandler):
     # ---------- API ----------
     def api(self, method, path):
         if method == "GET" and path == "/api/cities":
-            return self.send_json(200, {"cities": sorted(geo.CITIES), "options": pricing.OPTIONS, "temperature_ranges": TEMPERATURE_RANGES, "llm": llm.available(),
+            return self.send_json(200, {"cities": sorted(geo.CITIES), "options": pricing.OPTIONS, "temperature_ranges": TEMPERATURE_RANGES, "loading_access": LOADING_ACCESS, "site_equipment": SITE_EQUIPMENT, "llm": llm.available(),
                                         "coverage": {"complete": places.available(), "places": places.count() + len(geo.CITIES)}})
         if method == "GET" and path == "/api/places":
             if not RL_TRACK.allow(self.ip()):
@@ -513,7 +516,16 @@ class Handler(BaseHTTPRequestHandler):
                 raise pricing.QuoteError("La date d'enlèvement doit être dans les 60 prochains jours.")
             if deliver_by is not None and deliver_by < pickup:
                 raise pricing.QuoteError("La livraison souhaitée ne peut pas précéder l'enlèvement.")
-            q = pricing.build_quote(origin, destination, mode, pallets, weight, options, pickup, deliver_by)
+            height = d.get("pallet_height_cm")
+            stackable = bool(d.get("stackable"))
+            adr_class = adr_un = None
+            if options.get("adr"):
+                adr_class = security.clean_text(d.get("adr_class"), 2)
+                adr_un = security.clean_text(d.get("adr_un"), 4)
+                if adr_class not in ADR_CLASSES or not re.fullmatch(r"\d{4}", adr_un or ""):
+                    raise pricing.QuoteError("Matières dangereuses : indiquez la classe ADR et le numéro ONU à 4 chiffres.")
+            q = pricing.build_quote(origin, destination, mode, pallets, weight, options, pickup, deliver_by,
+                                    pallet_height_cm=height, stackable=stackable)
         except places.PlaceError as e:
             raise ApiError(422, str(e), {"suggestions": e.suggestions})
         except pricing.QuoteError as e:
@@ -523,6 +535,10 @@ class Handler(BaseHTTPRequestHandler):
         quote_id = secrets.token_urlsafe(12)
         shipment = {"pallets": q.pallets, "weight_kg": weight, "pickup_date": pickup.isoformat(),
                     "deliver_by": deliver_by.isoformat() if deliver_by else None, "options": q.options}
+        if adr_class:
+            shipment["adr_class"], shipment["adr_un"] = adr_class, adr_un
+        if height is not None and mode == "LTL":
+            shipment["pallet_height_cm"], shipment["stackable"] = height, stackable
         trange = d.get("temperature_range")
         if q.options.get("temperature") and trange in TEMPERATURE_RANGES:
             shipment["temperature_range"] = trange
@@ -688,6 +704,8 @@ class Handler(BaseHTTPRequestHandler):
                 "site_contact_name": security.clean_text(d.get("site_contact_name"), 80),
                 "site_contact_phone": security.clean_text(d.get("site_contact_phone"), 20),
                 "loading_notes": (security.clean_text(d["loading_notes"], 300) if d.get("loading_notes") else ""),
+                "loading_access": d.get("loading_access") if d.get("loading_access") in LOADING_ACCESS else "rear",
+                "site_equipment": d.get("site_equipment") if d.get("site_equipment") in SITE_EQUIPMENT else "none",
                 "goods_value_eur": security.clean_amount(d.get("goods_value_eur")),
                 "origin": stored["quote"]["origin"], "destination": stored["quote"]["destination"],
                 "mode": stored["quote"]["mode"],
@@ -803,6 +821,10 @@ class Handler(BaseHTTPRequestHandler):
         e = lambda v: html.escape(str(v))                       # noqa: E731 — échappement XSS
         rows = [("Expéditeur", f"{cu['name']} — {cu['company']}"), ("Lieu d'enlèvement", s["pickup_address"]),
                 ("Lieu de livraison", s["delivery_address"]), ("Marchandise", s["goods"]), ("Plage de température", TEMPERATURE_RANGES.get(s.get("temperature_range"), "—")),
+                ("Matières dangereuses (ADR)", f"classe {s['adr_class']}, ONU {s['adr_un']}" if s.get("adr_class") else "non"),
+                ("Hauteur des palettes", f"{s['pallet_height_cm']} cm, {'gerbables' if s.get('stackable') else 'non gerbables'}" if s.get("pallet_height_cm") else "non précisée"),
+                ("Chargement", LOADING_ACCESS.get(s.get("loading_access"), "Par l'arrière")),
+                ("Moyens de manutention sur site", SITE_EQUIPMENT.get(s.get("site_equipment"), "non précisé")),
                 ("Palettes", s.get("pallets")), ("Poids (kg)", s["weight_kg"]),
                 ("Date d'enlèvement", f"{s['pickup_date']} — créneau {s.get('pickup_window', '')}"),
                 ("Livraison", f"créneau {s.get('delivery_window', '')}" + (f" — au plus tard le {s['deliver_by']}" if s.get('deliver_by') else "")),

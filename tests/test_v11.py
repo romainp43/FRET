@@ -87,3 +87,43 @@ class Temperature(unittest.TestCase):
     def test_range_saved_with_quote_option(self):
         import server
         self.assertIn("-18 °C", server.TEMPERATURE_RANGES)
+
+
+class Questions(unittest.TestCase):
+    def q(self, **kw):
+        return pricing.build_quote("Lyon", "Paris", "LTL", 4, 1200, {}, date.today() + timedelta(days=2), None, **kw)
+
+    def test_stackable_low_pallets_cost_less(self):
+        self.assertLess(self.q(pallet_height_cm=100, stackable=True).price_ht, self.q(pallet_height_cm=100, stackable=False).price_ht)
+
+    def test_tall_pallets_get_no_discount_and_oversize_refused(self):
+        self.assertEqual(self.q(pallet_height_cm=150, stackable=True).price_ht, self.q(pallet_height_cm=150).price_ht)
+        with self.assertRaises(pricing.QuoteError):
+            self.q(pallet_height_cm=250)
+        with self.assertRaises(pricing.QuoteError):
+            self.q(pallet_height_cm=5)
+
+    def test_adr_requires_class_and_un_through_api(self):
+        import server
+        httpd = server.make_server("127.0.0.1", 0)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{httpd.server_address[1]}"
+        server.RL_QUOTE.hits.clear(); server.RL_GLOBAL.hits.clear()
+        body = {"origin": "Lyon", "destination": "Paris", "mode": "LTL", "pallets": 2, "weight_kg": 800,
+                "pickup_date": (date.today() + timedelta(days=2)).isoformat(), "options": {"adr": True}}
+
+        def post(b):
+            req = urllib.request.Request(base + "/api/quote", method="POST", data=json.dumps(b).encode(), headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req) as r:
+                    return r.status, json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read())
+        try:
+            self.assertEqual(post(body)[0], 422)
+            self.assertEqual(post(dict(body, adr_class="3", adr_un="12"))[0], 422)
+            st, q = post(dict(body, adr_class="3", adr_un="1263"))
+            self.assertEqual(st, 200)
+            self.assertEqual(server.DB_.get_quote(q["quote_id"])["shipment"]["adr_un"], "1263")
+        finally:
+            httpd.shutdown()

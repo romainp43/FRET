@@ -53,6 +53,11 @@ async function init() {
   Object.entries(info.options).forEach(([key, label]) => {
     box.append(el("label", {}, el("input", { type: "checkbox", "data-opt": key }), label));
   });
+  const lsel = $("loading-access"), esel = $("site-equipment");
+  Object.entries(info.loading_access || {}).forEach(([k, label]) => lsel.append(el("option", { value: k }, label)));
+  Object.entries(info.site_equipment || {}).forEach(([k, label]) => esel.append(el("option", { value: k }, label)));
+  const adrCheck = document.querySelector("[data-opt=adr]");
+  if (adrCheck) adrCheck.addEventListener("change", () => $("adr-row").classList.toggle("hidden", !adrCheck.checked));
   const tsel = $("temp-range");
   Object.entries(info.temperature_ranges || {}).forEach(([k, label]) => tsel.append(el("option", { value: k }, label)));
   const tcheck = document.querySelector("[data-opt=temperature]");
@@ -75,6 +80,7 @@ function syncMode() {
   const ltl = document.querySelector("input[name=mode]:checked").value === "LTL";
   $("pallets-label").textContent = ltl ? "Palettes" : "Palettes (facultatif)";
   $("pallets").required = ltl;
+  $("ltl-row").classList.toggle("hidden", !ltl);
 }
 
 $("quote-form").addEventListener("submit", async (e) => {
@@ -90,6 +96,8 @@ $("quote-form").addEventListener("submit", async (e) => {
   };
   if ($("deliver-by").value) body.deliver_by = $("deliver-by").value;
   if (options.temperature) body.temperature_range = $("temp-range").value;
+  if (options.adr) { body.adr_class = $("adr-class").value; body.adr_un = $("adr-un").value.trim(); }
+  if (mode === "LTL" && $("pallet-height").value) { body.pallet_height_cm = parseInt($("pallet-height").value, 10); body.stackable = $("stackable").checked; }
   $("quote-btn").disabled = true;
   try {
     const q = await api("/api/quote", body);
@@ -149,6 +157,7 @@ $("book-form").addEventListener("submit", async (e) => {
   const body = {
     quote_id: lastQuote.quote_id, accept_cgv: $("cgv").checked, sms_consent: $("sms-consent").checked,
     website: document.querySelector("[name=website]").value,
+    loading_access: $("loading-access").value, site_equipment: $("site-equipment").value,
     pickup_address: $("pickup-address").value, delivery_address: $("delivery-address").value, goods: $("goods").value,
     pickup_window: `${$("pw-start").value}-${$("pw-end").value}`,
     delivery_window: `${$("dw-start").value}-${$("dw-end").value}`,

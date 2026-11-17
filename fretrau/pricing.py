@@ -139,7 +139,7 @@ def estimate_cost(mode, origin, destination, pallets, weight_kg, options, t=None
 
 
 def build_quote(origin, destination, mode, pallets, weight_kg, options=None, pickup: date = None,
-                deliver_by: date = None) -> Quote:
+                deliver_by: date = None, pallet_height_cm=None, stackable=False) -> Quote:
     t = tariff.load()
     options = {k: bool(v) for k, v in (options or {}).items() if k in OPTIONS}
     if not geo.known(origin) or not geo.known(destination):
@@ -170,7 +170,19 @@ def build_quote(origin, destination, mode, pallets, weight_kg, options=None, pic
     if options.get("temperature") and options.get("adr"):
         raise QuoteError("ADR et température dirigée ne sont pas combinables en ligne : contactez-nous.")
 
-    est = estimate_cost(mode, origin, destination, pallets, weight_kg, options, t)
+    priced_pallets = pallets
+    stack_note = None
+    if mode == "LTL" and pallet_height_cm is not None:
+        if isinstance(pallet_height_cm, bool) or not isinstance(pallet_height_cm, (int, float)) or not 20 <= pallet_height_cm <= 300:
+            raise QuoteError("Hauteur de palette invalide (20 à 300 cm).")
+        if pallet_height_cm > 220:
+            raise QuoteError("Palette de plus de 2,20 m : hors gabarit standard, contactez-nous pour un devis sur mesure.")
+        if stackable and pallet_height_cm <= 120:
+            priced_pallets = max(1, -(-pallets // 2))
+            stack_note = "Palettes gerbables de 1,20 m maximum : deux palettes par emplacement (à confirmer au chargement)."
+    est = estimate_cost(mode, origin, destination, priced_pallets, weight_kg, options, t)
+    if stack_note:
+        est["warnings"].append(stack_note)
     km = est["km"]
     delivery_note = ""
     earliest = ""

@@ -66,6 +66,14 @@
             </div>
             <label>Options</label>
             <div class="checks" id="options"></div>
+            <div id="ltl-row" class="row hidden">
+              <div><label for="pallet-height">Hauteur d'une palette (cm)</label><input id="pallet-height" type="number" min="20" max="220" inputmode="numeric" placeholder="Ex. 110"></div>
+              <div><label class="checks"><input type="checkbox" id="stackable"> Palettes gerbables (empilables)</label></div>
+            </div>
+            <div id="adr-row" class="row hidden">
+              <div><label for="adr-class">Classe ADR</label><select id="adr-class"><option value="">Choisir</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option></select></div>
+              <div><label for="adr-un">N° ONU (4 chiffres)</label><input id="adr-un" inputmode="numeric" maxlength="4" placeholder="Ex. 1263"></div>
+            </div>
             <div id="temp-row" class="hidden">
               <label for="temp-range">Plage de température</label>
               <select id="temp-range"></select>
@@ -116,6 +124,10 @@
             <div class="row">
               <div><label for="sc-name">Contact sur site</label><input id="sc-name" required autocomplete="off"></div>
               <div><label for="sc-phone">Téléphone du contact</label><input id="sc-phone" type="tel" required autocomplete="off"></div>
+            </div>
+            <div class="row">
+              <div><label for="loading-access">Chargement</label><select id="loading-access"></select></div>
+              <div><label for="site-equipment">Moyens de manutention sur site</label><select id="site-equipment"></select></div>
             </div>
             <label for="goods">Marchandise</label><input id="goods" required placeholder="Ex. palettes de carrelage">
             <div class="row">
