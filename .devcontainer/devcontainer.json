@@ -1,0 +1,13 @@
+{
+  "name": "FRETRAU",
+  "image": "mcr.microsoft.com/devcontainers/python:3.13",
+  "forwardPorts": [8080],
+  "portsAttributes": { "8080": { "label": "Site FRETRAU", "onAutoForward": "openBrowser" } },
+  "containerEnv": {
+    "FRETRAU_ADMIN_PASSWORD": "demo-mot-de-passe-long-2026",
+    "FRETRAU_DEMO_SPEED": "360",
+    "HOST": "0.0.0.0",
+    "PORT": "8080"
+  },
+  "postAttachCommand": "sh deploy/start.sh"
+}

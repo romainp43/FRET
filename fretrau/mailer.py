@@ -9,7 +9,7 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 
-from . import geo, security
+from . import security
 
 
 def queue(db, to_addr: str, subject: str, body: str):
@@ -47,8 +47,7 @@ def flush(db) -> int:
 
 def booking_confirmation(customer, code, shipment, price_ht, base_url) -> tuple[str, str]:
     subject = f"FRETRAU — transport confirmé ({code})"
-    body = (f"Bonjour {customer['name']},\n\nVotre transport {geo.label(shipment['origin'])} → "
-            f"{geo.label(shipment['destination'])} "
+    body = (f"Bonjour {customer['name']},\n\nVotre transport {shipment['origin']} → {shipment['destination']} "
             f"est confirmé pour un montant de {price_ht:.2f} € HT.\n\nCode de suivi : {code}\n"
             f"Suivi : {base_url}/#{code}\n\nCordialement,\nL'équipe FRETRAU")
     return subject, body

@@ -1,215 +1,269 @@
-"""Agent de réception : transforme une demande de devis écrite en texte libre (e-mail) en devis chiffré.
+"""Agent d'accueil : transforme un e-mail de demande de prix « dans n'importe quel format » en demande structurée.
 
-Étapes :
-  1. extraction par règles (codes postaux, villes, palettes, poids, date, options) ;
-  2. si une clé API est configurée, le modèle de langage complète les champs manquants ;
-  3. TOUS les champs, d'où qu'ils viennent, sont revalidés par le moteur de devis (pricing.build_quote) ;
-  4. le prix est calculé par le code, jamais par le modèle ;
-  5. s'il manque une information indispensable, l'agent la demande au lieu de deviner.
+Principe de justesse : on n'invente JAMAIS une donnée critique. Poids, villes, date d'enlèvement (et nombre de palettes en
+messagerie) doivent figurer dans le texte ; sinon la demande est déclarée incomplète et la réponse liste exactement ce qui manque.
+Les choix par défaut (ex. mode déduit des palettes) sont listés dans `assumptions` pour être montrés au client.
+Extraction déterministe (regex + base de villes), sans modèle de langage : reproductible et auditable.
 """
 import re
-import secrets
 import unicodedata
-from dataclasses import asdict
 from datetime import date, timedelta
 
-from .. import geo, mailer, market, pricing
-from . import llm
+from .. import geo, places
 
-_WEIGHT_RE = re.compile(r"(\d{1,3}(?:[  .]\d{3})+|\d+)(?:[.,](\d{1,2}))?\s*(kg|kgs|kilos?|tonnes?|t)\b", re.I)
-_PALLET_RE = re.compile(r"(\d{1,2})\s*(?:palettes?|pal\b|europalettes?)", re.I)
-_DATE_RE = re.compile(r"\b(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2,4}))?\b")
-_ISO_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
-_MONEY_RE = re.compile(r"\d[\d  .,]*\s*(?:€|eur\b|euros?\b)", re.I)
-_DEST_CUE = re.compile(r"(livraison|livrer|destination|arriv[ée]e|vers|jusqu)", re.I)
-_ORIG_CUE = re.compile(r"(d[ée]part|enl[èe]vement|chargement|origine|depuis|au d[ée]part)", re.I)
-_WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
-_OPTION_WORDS = {
-    "adr": r"\b(adr|mati[èe]res? dangereuses?)\b", "tail_lift": r"\bhayon\b",
-    "temperature": r"\b(frigo|frigorifique|temp[ée]rature dirig[ée]e|r[ée]frig[ée]r[ée])\b",
-    "urgent": r"\b(urgent|express|en urgence)\b", "flatbed": r"\bplateau\b",
-}
+WEEKDAYS = {"lundi": 0, "mardi": 1, "mercredi": 2, "jeudi": 3, "vendredi": 4, "samedi": 5, "dimanche": 6}
 
 
-def _fold(s: str) -> str:
-    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
+def _norm(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s.lower())
+    return "".join(ch for ch in s if not unicodedata.combining(ch))
 
 
-def _places(text: str) -> list:
-    """Lieux reconnus, dans l'ordre du texte : [(position, lieu)]."""
-    found = []
-    for m in re.finditer(r"(?<!\d)\d{5}(?!\d)", text):
-        if geo.known(m.group()):
-            found.append((m.start(), m.group()))
-    folded = _fold(text)
+DISCRIMINATORS = {"Valence (Drôme)": ("drome", "26000", "26"), "Valence (Espagne)": ("espagne", "spain", "espana", "46000")}
+
+
+def _names():
+    """(nom normalisé, ville ou liste de villes) — noms complets, formes sans parenthèse et alias."""
+    out = {}
     for city in geo.CITIES:
-        for m in re.finditer(r"(?<![a-z])" + re.escape(_fold(city)) + r"(?![a-z])", folded):
-            found.append((m.start(), city))
-    found.sort()
-    out = []
-    for pos, place in found:                       # un code postal suivi du nom de sa ville ne compte qu'une fois
-        if out and (place == out[-1][1] or pos - out[-1][0] < 30 and geo.haversine_km(place, out[-1][1]) < 25):
-            continue
-        out.append((pos, place))
+        out[_norm(city)] = city
+    for alias, target in geo.ALIASES.items():
+        out.setdefault(_norm(alias), target)
     return out
 
 
-def _route(text: str, places: list):
-    if len(places) < 2:
-        if places and any(0 <= places[0][0] - m.end() < 60 for m in _DEST_CUE.finditer(text)):
-            return None, places[0][1]
-        return (places[0][1] if places else None), None
-
-    def after(cue):
-        best = None
-        for m in cue.finditer(text):
-            nxt = [p for p in places if 0 <= p[0] - m.end() < 60]
-            if nxt and (best is None or nxt[0][0] < best[0]):
-                best = nxt[0]
-        return best[1] if best else None
-
-    origin, dest = after(_ORIG_CUE), after(_DEST_CUE)
-    names = [p[1] for p in places]
-    if origin and dest and origin != dest:
-        return origin, dest
-    if dest and not origin:
-        origin = next((n for n in names if n != dest), None)
-        return origin, dest
-    if origin and not dest:
-        return origin, next((n for n in names if n != origin), None)
-    return names[0], names[1]
+STOP = {"pour", "de", "du", "des", "le", "la", "les", "un", "une", "et", "ou", "en", "par", "sur", "sous", "avec", "sans", "au", "aux",
+        "bonjour", "merci", "demain", "prix", "devis", "camion", "palette", "palettes", "tonnes", "tonne", "kg", "complet", "svp",
+        "cordialement", "madame", "monsieur", "urgent", "express", "enlevement", "livraison", "date", "lundi", "mardi", "mercredi",
+        "jeudi", "vendredi", "samedi", "dimanche", "total", "poids", "adr", "hayon", "from", "to", "est", "ce", "ces", "mon", "ma", "mes"}
+KEYWORDS = {"de", "depuis", "from", "a", "vers", "to", "pour", "jusqu", "au", "chez", "entre", "et"}
+TOKEN = re.compile(r"\d{5}|[^\W\d_]+(?:[-'’][^\W\d_]+)*")
 
 
-def _pickup(text: str, today: date):
-    low = _fold(text)
-    if "apres-demain" in low or "apres demain" in low:
-        return today + timedelta(days=2)
-    if "demain" in low:
-        return today + timedelta(days=1)
-    if "aujourd" in low:
-        return today
-    for i, day in enumerate(_WEEKDAYS):               # « mardi » : le prochain mardi
-        if re.search(r"\b" + day + r"\b", low):
-            return today + timedelta(days=(i - today.weekday() - 1) % 7 + 1)
-    m = _ISO_RE.search(text)
+def _commune_mentions(text: str, seed_norms: set):
+    """Communes (référentiel complet) citées dans le texte. Une commune n'est retenue que si le contexte indique un lieu
+    (précédée de de/depuis/vers/à/→…, suivie de à/vers/→…, ou accolée à un code postal) : « Pour », « Merci » sont aussi des communes !"""
+    if not places.available():
+        return [], []
+    toks = [(m.group(0), m.start(), m.end()) for m in TOKEN.finditer(text)]
+    found, ambiguous, i = [], [], 0
+    while i < len(toks):
+        done = False
+        for n in range(min(6, len(toks) - i), 0, -1):
+            chunk = toks[i:i + n]
+            if any(t[0].isdigit() for t in chunk):
+                continue
+            phrase = " ".join(t[0] for t in chunk)
+            norm = places.normalize(phrase)
+            if n == 1 and norm in STOP:
+                continue
+            if norm in seed_norms:
+                break
+            cands = places.by_name(phrase)
+            if not cands:
+                continue
+            before = text[:chunk[0][1]].rstrip()
+            after = text[chunk[-1][2]:].lstrip()
+            prev_tok = toks[i - 1][0] if i > 0 else ""
+            next_tok = toks[i + n][0] if i + n < len(toks) else ""
+            postal = prev_tok if prev_tok.isdigit() else (next_tok if next_tok.isdigit() else None)
+            ctx = (places.normalize(prev_tok) in KEYWORDS or before.endswith(("->", "→", "=>", ":", ">"))
+                   or re.match(r"(?i)(à|a|vers|to|->|→|=>|>)\b|(->|→|=>)", after) is not None or postal is not None)
+            if not ctx:
+                continue
+            if postal:
+                byp = [c for c in cands if postal in places.by_postal_codes(c["label"])]
+                if len(byp) == 1:
+                    cands = byp
+            if len(cands) == 1:
+                found.append((chunk[0][1], cands[0]["label"], _norm(phrase)))
+            else:
+                ambiguous.append(f"« {phrase} » ({', '.join(c['label'] for c in cands[:4])}…) : précisez le code postal")
+            i += n - 1
+            done = True
+            break
+        i += 1
+    return found, ambiguous
+
+
+def _cities(text: str):
+    """Villes reconnues (ordre d'apparition) sous forme (libellé, motif normalisé), villes ambiguës, texte normalisé."""
+    n = _norm(text)
+    found, ambiguous, taken = [], [], []
+    seed_norms = set()
+    for name, target in sorted(_names().items(), key=lambda kv: -len(kv[0])):
+        seed_norms.add(places.normalize(name))
+        for m in re.finditer(r"(?<![a-z])" + re.escape(name) + r"(?![a-z])", n):
+            if any(s < m.end() and m.start() < e for s, e in taken):
+                continue
+            taken.append((m.start(), m.end()))
+            if isinstance(target, list):
+                pick = [c for c in target if any(d in n for d in DISCRIMINATORS.get(c, ()))]
+                if len(pick) == 1:
+                    found.append((m.start(), pick[0], name))
+                else:
+                    ambiguous.append(" ou ".join(target))
+            else:
+                found.append((m.start(), target, name))
+    extra, amb2 = _commune_mentions(text, seed_norms)
+    ambiguous += amb2
+    found += [(pos, label, pat) for pos, label, pat in extra]
+    ordered, seen = [], set()
+    for _, label, pat in sorted(found):
+        if label not in seen:
+            seen.add(label)
+            ordered.append((label, pat))
+    return ordered, ambiguous, n
+
+
+def _route(text):
+    cities, ambiguous, n = _cities(text)
+    if ambiguous:
+        return None, None, "Lieu ambigu : " + " ; ".join(sorted(set(ambiguous))) + "."
+    arrow = r"(?:a|vers|pour|to|jusqu a|jusqu'a|->|→|=>)"
+    pairs = []
+    for city_a, pa in cities:
+        for city_b, pb in cities:
+            if city_a == city_b:
+                continue
+            a, b = re.escape(pa), re.escape(pb)
+            if re.search(rf"(?:de|depuis|from|au depart de|depart)\s+(?:\d{{5}}\s+)?{a}(?:\s+\d{{5}})?\s*(?:,|:)?\s*{arrow}\s+(?:\d{{5}}\s+)?{b}", n) or \
+               re.search(rf"{a}(?:\s+\d{{5}})?\s*(?:->|→|=>|>|-)\s*(?:\d{{5}}\s+)?{b}", n) or re.search(rf"{a}(?:\s+\d{{5}})?\s+(?:vers|to)\s+(?:\d{{5}}\s+)?{b}", n):
+                pairs.append((city_a, city_b))
+    pairs = list(dict.fromkeys(pairs))
+    labels = [c for c, _ in cities]
+    if len(pairs) > 1:
+        return None, None, ("Plusieurs trajets détectés (" + " ; ".join(f"{x} → {y}" for x, y in pairs)
+                            + ") : envoyez une demande par trajet pour un prix exact.")
+    if pairs:
+        return pairs[0][0], pairs[0][1], None
+    if len(labels) == 2:
+        return labels[0], labels[1], "Sens du trajet déduit de l'ordre d'apparition des villes."
+    if len(labels) > 2:
+        return None, None, f"Plusieurs villes détectées ({', '.join(labels)}) : précisez le départ et l'arrivée."
+    return None, None, None
+
+
+def _weight(n):
+    m = re.search(r"(\d[\d\s\.,]*)\s*(kg|kgs|kilos?|tonnes?|t)\b", n)
+    if not m:
+        return None
+    raw = m.group(1).strip().replace(" ", "")
+    unit = m.group(2)
     try:
-        if m:
-            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-        for m in _DATE_RE.finditer(text):
-            year = int(m.group(3)) if m.group(3) else today.year
-            year += 2000 if year < 100 else 0
-            d = date(year, int(m.group(2)), int(m.group(1)))
-            if not m.group(3) and d < today:
-                d = date(year + 1, d.month, d.day)
-            return d
+        v = float(raw.replace(",", "."))
     except ValueError:
-        pass
-    return None
+        return None
+    if unit in ("t", "tonne", "tonnes"):
+        v *= 1000
+    elif re.fullmatch(r"\d{1,3}(\.\d{3})+", raw):        # « 1.200 kg » : point = séparateur de milliers
+        v = float(raw.replace(".", ""))
+    return v
+
+
+def _date(n, today: date):
+    if re.search(r"apres[- ]demain", n):
+        return today + timedelta(days=2), None
+    if re.search(r"\bdemain\b", n):
+        return today + timedelta(days=1), None
+    m = re.search(r"\b(20\d{2})-(\d{2})-(\d{2})\b", n)
+    if m:
+        try:
+            return date(int(m[1]), int(m[2]), int(m[3])), None
+        except ValueError:
+            return None, "Date invalide."
+    m = re.search(r"\b(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?\b", n)
+    if m:
+        d, mo = int(m[1]), int(m[2])
+        y = int(m[3]) if m[3] else today.year
+        y += 2000 if y < 100 else 0
+        try:
+            res = date(y, mo, d)
+        except ValueError:
+            return None, "Date invalide."
+        note = None
+        if not m[3] and res < today:                       # « 05/01 » écrit en novembre : année suivante
+            res = date(y + 1, mo, d)
+            note = f"Année supposée : {res.year}."
+        return res, note
+    for name, wd in WEEKDAYS.items():
+        if re.search(rf"\b{name}\b", n):
+            delta = (wd - today.weekday()) % 7 or 7
+            return today + timedelta(days=delta), f"« {name} » interprété comme le prochain {name} ({(today + timedelta(days=delta)).isoformat()})."
+    return None, None
 
 
 def parse(text: str, today: date = None) -> dict:
-    """Champs extraits par règles. Les valeurs absentes sont à None."""
     today = today or date.today()
-    text = text[:5000]
-    weight = None
-    m = _WEIGHT_RE.search(text)
-    if m:
-        value = float(re.sub(r"[  .]", "", m.group(1)) + "." + (m.group(2) or "0"))
-        weight = value * 1000 if m.group(3).lower().startswith("t") else value
-    scrub = _MONEY_RE.sub(" ", _WEIGHT_RE.sub(" ", text))          # un poids ou un prix n'est pas un code postal
-    origin, destination = _route(scrub, _places(scrub))
-    m = _PALLET_RE.search(text)
-    pallets = int(m.group(1)) if m else None
-    low = _fold(text)
-    if re.search(r"\b(lot partiel|demi[- ]camion|partiel)\b", low):
-        mode = "PTL"
-    elif re.search(r"\b(camion complet|complet|ftl|semi|semi-remorque)\b", low):
-        mode = "FTL"
-    elif pallets:
-        mode = "LTL"
-    else:
-        mode = None
-    options = {k: bool(re.search(rx, low)) for k, rx in _OPTION_WORDS.items()}
-    return {"origin": origin, "destination": destination, "mode": mode, "pallets": pallets,
-            "weight_kg": weight, "pickup_date": _pickup(text, today), "options": options}
+    text = (text or "")[:5000]
+    origin, destination, route_note = _route(text)
+    n = _norm(text)
+    assumptions, fields = [], {}
+    if origin and destination:
+        fields["origin"], fields["destination"] = origin, destination
+        if route_note:
+            assumptions.append(route_note)
+    weight = _weight(n)
+    if weight:
+        fields["weight_kg"] = weight
+    m = re.search(r"(\d{1,2})\s*(?:palettes?|pal\b|europe?s?\b|epal)", n)
+    pallets = int(m[1]) if m else None
+    if pallets:
+        fields["pallets"] = pallets
+    pickup, dnote = _date(n, today)
+    if pickup:
+        fields["pickup_date"] = pickup.isoformat()
+    if dnote:
+        assumptions.append(dnote)
+    # mode
+    full = re.search(r"camion complet|lot complet|\bftl\b|complet", n)
+    part = re.search(r"messagerie|groupage|\bltl\b|lot partiel", n)
+    if full and not part:
+        fields["mode"] = "FTL"
+    elif part and not full:
+        fields["mode"] = "LTL"
+    elif pallets is not None and pallets <= 12:
+        fields["mode"] = "LTL"
+        assumptions.append("Mode « palettes (messagerie) » déduit du nombre de palettes ; indiquez « camion complet » si besoin.")
+    elif pallets is not None:
+        fields["mode"] = "FTL"
+        assumptions.append("Mode « camion complet » déduit du nombre de palettes (13 ou plus).")
+    options = {
+        "adr": bool(re.search(r"\badr\b|matieres? dangereuses?|marchandises? dangereuses?", n)),
+        "temperature": bool(re.search(r"temperature dirigee|frigo|refrigere|froid|reefer|\+4|\bsurgele", n)),
+        "tail_lift": bool(re.search(r"hayon", n)),
+        "urgent": bool(re.search(r"urgent|express|au plus vite|asap", n)),
+    }
+    fields["options"] = {k: v for k, v in options.items() if v}
+    ld = re.search(r"livr\w*\s+(?:au plus tard\s+)?(?:le\s+)?(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?", n)
+    if ld and pickup:
+        y = int(ld[3]) if ld[3] else pickup.year
+        y += 2000 if y < 100 else 0
+        try:
+            fields["deliver_by"] = date(y, int(ld[2]), int(ld[1])).isoformat()
+        except ValueError:
+            pass
+    missing = []
+    if not (origin and destination):
+        missing.append("villes de départ et d'arrivée")
+    if "weight_kg" not in fields:
+        missing.append("poids total (en kg ou tonnes)")
+    if "pickup_date" not in fields:
+        missing.append("date d'enlèvement")
+    if fields.get("mode") == "LTL" and "pallets" not in fields:
+        missing.append("nombre de palettes")
+    if "mode" not in fields and "pallets" not in fields:
+        missing.append("type de transport (camion complet ou palettes) / nombre de palettes")
+    ambiguity = route_note if (route_note and not (origin and destination)) else None
+    if not (origin and destination) and not ambiguity and re.search(r"\b\d{5}\b", text):
+        ambiguity = "Code postal reconnu mais ville inconnue de notre base : indiquez la ville (ou la grande ville la plus proche)."
+    return {"complete": not missing, "fields": fields, "missing": missing, "assumptions": assumptions, "ambiguity": ambiguity}
 
 
-def _complete_with_llm(fields: dict, text: str) -> dict:
-    missing = [k for k in ("origin", "destination", "pallets", "weight_kg", "mode") if fields.get(k) is None]
-    if not missing or not llm.available():
-        return fields
-    got = llm.extract(text, {
-        "origin": "code postal français à 5 chiffres du lieu de chargement", "destination": "code postal français "
-        "à 5 chiffres du lieu de livraison", "pallets": "nombre entier de palettes", "weight_kg": "poids total en kg",
-        "mode": "FTL (camion complet), PTL (lot partiel) ou LTL (palettes)"})
-    out = dict(fields)
-    for k in missing:
-        v = got.get(k)
-        if k in ("origin", "destination") and isinstance(v, str) and geo.known(v.strip()):
-            out[k] = v.strip()
-        elif k == "pallets" and isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 33:
-            out[k] = v
-        elif k == "weight_kg" and isinstance(v, (int, float)) and not isinstance(v, bool) and 1 <= v <= pricing.FTL_MAX_KG:
-            out[k] = float(v)
-        elif k == "mode" and v in pricing.MODES:
-            out[k] = v
-    return out
-
-
-MISSING_LABELS = {"origin": "le code postal de chargement", "destination": "le code postal de livraison",
-                  "weight_kg": "le poids total (kg)", "pallets": "le nombre de palettes"}
-
-
-def handle(db, from_addr: str, text: str, base_url: str, today: date = None) -> dict:
-    """Traite un e-mail de demande de devis et met la réponse en file d'envoi."""
-    today = today or date.today()
-    f = _complete_with_llm(parse(text, today), text)
-    assumptions = []
-    if f["mode"] is None:
-        f["mode"] = "FTL"
-        assumptions.append("camion complet (aucun nombre de palettes indiqué)")
-    if f["pickup_date"] is None or not today <= f["pickup_date"] <= today + timedelta(days=60):
-        f["pickup_date"] = today + timedelta(days=1)
-        assumptions.append(f"enlèvement le {f['pickup_date'].strftime('%d/%m/%Y')}")
-    if f["mode"] == "FTL" and f["weight_kg"] is None:
-        f["weight_kg"] = float(pricing.FTL_MAX_KG)
-        assumptions.append("chargement jusqu'à 24 tonnes")
-    needed = ["origin", "destination", "weight_kg"] + (["pallets"] if f["mode"] != "FTL" else [])
-    missing = [k for k in needed if f.get(k) is None]
-
-    if missing:
-        body = ("Bonjour,\n\nMerci pour votre demande. Pour vous donner un prix, il nous manque : "
-                + ", ".join(MISSING_LABELS[k] for k in missing)
-                + ".\nRépondez simplement à ce message avec ces informations.\n\nL'équipe FRETRAU")
-        mailer.queue(db, from_addr, "FRETRAU — précision nécessaire pour votre devis", body)
-        db.add_inbound_quote(from_addr, text, None, "missing:" + ",".join(missing))
-        return {"status": "missing", "missing": missing}
-
-    try:
-        q = pricing.build_quote(f["origin"], f["destination"], f["mode"], f["pallets"], f["weight_kg"], f["options"],
-                                market_factor=market.factor(db, f["origin"], f["destination"]))
-    except pricing.QuoteError as e:
-        mailer.queue(db, from_addr, "FRETRAU — votre demande de devis",
-                     f"Bonjour,\n\nNous ne pouvons pas chiffrer cette demande automatiquement : {e}\n"
-                     "Un conseiller vous recontacte.\n\nL'équipe FRETRAU")
-        db.add_inbound_quote(from_addr, text, None, "human")
-        return {"status": "human", "reason": str(e)}
-
-    quote_id = secrets.token_urlsafe(12)
-    shipment = {"pallets": f["pallets"], "weight_kg": f["weight_kg"], "pickup_date": f["pickup_date"].isoformat(),
-                "options": {k: v for k, v in f["options"].items() if v}}
-    db.save_quote(quote_id, {"quote": asdict(q), "shipment": shipment})
-    lines = [f"Trajet : {geo.label(q.origin)} -> {geo.label(q.destination)} ({q.distance_km:.0f} km)",
-             f"Transport : {pricing.MODES[q.mode]}"
-             + (f", {f['pallets']} palette(s)" if f["pallets"] and q.mode != "FTL" else "") + f", {f['weight_kg']:.0f} kg",
-             f"Prix : {q.price_ht:.2f} € HT" + (f" ({q.price_ttc:.2f} € TTC)" if q.vat else ""),
-             f"Délai estimé : {q.transit_days} jour(s)"]
-    if assumptions:
-        lines.append("Hypothèses retenues : " + " ; ".join(assumptions) + ".")
-    body = ("Bonjour,\n\nVoici votre prix, valable 24 h :\n\n" + "\n".join(lines)
-            + f"\n\nRéserver en ligne : {base_url}/?devis={quote_id}\n\nL'équipe FRETRAU")
-    mailer.queue(db, from_addr, f"FRETRAU — votre devis {geo.label(q.origin)} -> {geo.label(q.destination)}", body)
-    db.add_inbound_quote(from_addr, text, quote_id, "quoted")
-    return {"status": "quoted", "quote_id": quote_id, "price_ht": q.price_ht, "assumptions": assumptions,
-            "fields": {**{k: f[k] for k in ("origin", "destination", "mode", "pallets", "weight_kg")},
-                       "pickup_date": f["pickup_date"].isoformat()}}
+def reply_needing_info(result: dict) -> str:
+    lines = ["Bonjour,", "", "Merci pour votre demande. Pour vous donner un prix exact sans approximation, il nous manque :"]
+    lines += [f"  - {m}" for m in result["missing"]]
+    if result.get("ambiguity"):
+        lines += ["", result["ambiguity"]]
+    lines += ["", "Répondez simplement à cet e-mail avec ces éléments : le prix vous sera communiqué aussitôt.", "", "L'équipe FRETRAU"]
+    return "\n".join(lines)

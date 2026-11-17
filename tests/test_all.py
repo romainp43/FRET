@@ -16,7 +16,9 @@ from fretrau import pricing, security, booking  # noqa: E402
 from fretrau.agents import compliance, sourcing, negotiation  # noqa: E402
 from fretrau.carriers import CARRIERS  # noqa: E402
 
-PICKUP = date.today() + timedelta(days=3)
+from fretrau import calendar_fr  # noqa: E402
+
+PICKUP = calendar_fr.next_business_day(date.today() + timedelta(days=3))
 
 
 class TestPricing(unittest.TestCase):
@@ -140,6 +142,8 @@ class TestServer(unittest.TestCase):
     def booking_body(self, quote_id, **kw):
         b = {"quote_id": quote_id, "accept_cgv": True, "pickup_address": "1 rue Test, Lyon",
              "delivery_address": "2 avenue Demo, Paris", "goods": "Palettes <b>de test</b>",
+             "pickup_window": "08:00-12:00", "delivery_window": "09:00-17:00",
+             "site_contact_name": "Marie Test", "site_contact_phone": "0611223344",
              "contact": {"name": "Jean Test", "company": "Test SAS", "email": "jean@test.fr", "phone": "0612345678"}}
         b.update(kw)
         return b

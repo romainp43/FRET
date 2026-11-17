@@ -7,7 +7,7 @@ import json
 import os
 from datetime import date, timedelta
 
-from . import geo, pricing
+from . import geo
 
 VAT_RATE = 0.20
 
@@ -32,8 +32,7 @@ def build(booking: dict) -> dict:
     return {
         "seller": seller(),
         "buyer": {"name": cu["name"], "company": cu["company"], "email": cu["email"]},
-        "line": f"Transport routier {geo.label(s['origin'])} → {geo.label(s['destination'])} "
-                f"({pricing.MODES.get(s['mode'], s['mode']).lower()}), "
+        "line": f"Transport routier {s['origin']} → {s['destination']} ({'camion complet' if s['mode'] == 'FTL' else 'palettes'}), "
                 f"enlèvement le {s['pickup_date']} — réf. {booking['tracking_code']}",
         "total_ht": ht, "vat_rate": VAT_RATE if domestic else 0.0, "vat": vat, "total_ttc": round(ht + vat, 2),
         "vat_note": None if domestic else

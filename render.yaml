@@ -1,0 +1,17 @@
+# Déploiement public en un clic sur Render (https://render.com) : « New + » → « Blueprint » → choisir ce dépôt.
+# Offre gratuite = démonstration (disque éphémère : les réservations sont perdues à chaque redémarrage).
+services:
+  - type: web
+    name: fretrau
+    runtime: python
+    plan: free
+    buildCommand: "echo ok"
+    startCommand: "sh deploy/start.sh"
+    healthCheckPath: /legal/cookies.html
+    envVars:
+      - { key: HOST, value: 0.0.0.0 }
+      - { key: FRETRAU_HTTPS, value: "1" }
+      - { key: FRETRAU_TRUST_PROXY, value: "1" }
+      - { key: FRETRAU_DEMO_SPEED, value: "360" }
+      - { key: FRETRAU_ADMIN_PASSWORD, generateValue: true }
+      - { key: FRETRAU_SECRET, generateValue: true }

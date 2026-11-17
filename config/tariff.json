@@ -1,0 +1,124 @@
+{
+  "version": "2026-11-17",
+  "notes": "Barème d'ACHAT transport (coût FRETRAU), à recaler chaque mois. Chaque paramètre indique sa source et son niveau de confiance. Les paramètres 'low' sont des hypothèses à calibrer avec vos prix réels (voir tools/calibrate.py).",
+  "market_index": {
+    "eur_per_km": 1.756,
+    "as_of": "2026-07-01",
+    "source": "Upply Freight Index Route France : record de 1,767 €/km en juin 2026, puis -0,6 % en juillet 2026 (valeur dérivée : 1,767 x 0,994 = 1,756). Recoupement : enquête FNTR T2 2026 = 1,740 €/km (compte d'autrui). Le point bas récent était 1,587 €/km en août 2025.",
+    "confidence": "high"
+  },
+  "ftl": {
+    "distance_band_multipliers": [
+      {
+        "max_km": 150,
+        "mult": 1.45
+      },
+      {
+        "max_km": 400,
+        "mult": 1.12
+      },
+      {
+        "max_km": 800,
+        "mult": 0.95
+      },
+      {
+        "max_km": null,
+        "mult": 0.85
+      }
+    ],
+    "min_charge_eur": 300,
+    "source": "Forme de la courbe calée sur les relevés T3 2026 (Duisbourg–Lille 2,10–2,21 €/km ; Madrid–Paris 1,36–1,48 €/km, trans.info / IRU / Upply / Transport Intelligence). Court trajet plus cher au km.",
+    "confidence": "medium"
+  },
+  "country_cost_index": {
+    "FR": 1.0,
+    "ES": 0.92,
+    "PT": 0.9,
+    "IT": 1.0,
+    "BE": 1.04,
+    "NL": 1.06,
+    "LU": 1.04,
+    "DE": 1.1,
+    "AT": 1.08,
+    "CH": 1.45,
+    "PL": 0.78,
+    "source": "ES et DE calés sur les relevés T3 2026 ci-dessus ; les autres pays sont des hypothèses.",
+    "confidence": {
+      "ES": "medium",
+      "DE": "medium",
+      "FR": "high",
+      "default": "low"
+    }
+  },
+  "ltl": {
+    "kg_per_euro_pallet": 740,
+    "per_unit_base_eur": 14.0,
+    "per_unit_per_km_eur": 0.085,
+    "min_charge_eur": 60,
+    "cap_ratio_vs_ftl": 1.0,
+    "source": "Règle de poids payant : 1 mètre de plancher = 1 850 kg, soit 740 kg par palette Europe (DSV, BWS). Les tarifs unitaires sont des hypothèses.",
+    "confidence": "low"
+  },
+  "options": {
+    "adr": {
+      "pct": 0.2,
+      "confidence": "low"
+    },
+    "temperature": {
+      "pct": 0.25,
+      "confidence": "low"
+    },
+    "urgent": {
+      "pct": 0.3,
+      "confidence": "low"
+    },
+    "tail_lift": {
+      "eur": 45.0,
+      "confidence": "low"
+    }
+  },
+  "fuel": {
+    "weight": 0.209,
+    "index_ref": 242.15,
+    "index_now": null,
+    "source": "Indice CNR gazole professionnel (TRM, PTAC >= 7,5 t, base 100 = déc. 2000) : 242,15 en juillet 2026 (+29,4 % sur un an ; +46 % de août 2025 à août 2026 selon le CNR). Pondération du gazole dans l'indice longue distance ensembles articulés 2026 : 20,9 %. Renseignez index_now avec la dernière valeur CNR (publiée tous les 15 jours) : delta = poids x (index_now / index_ref - 1).",
+    "confidence": "high"
+  },
+  "uncertainty": {
+    "ftl_domestic": 0.08,
+    "ftl_international": 0.12,
+    "ltl_domestic": 0.15,
+    "ltl_international": 0.2,
+    "switzerland_extra": 0.13,
+    "alpine_extra": 0.05
+  },
+  "margin": {
+    "target": 0.12,
+    "minimum": 0.05,
+    "risk_premium_share": 0.25
+  },
+  "guards": {
+    "anomaly_low_ratio": 0.6,
+    "high_value_goods_eur": 30000,
+    "ratematch_max_auto_discount": 0.1
+  },
+  "bottom_up": {
+    "driver_eur_per_h": 32.0,
+    "vehicle_fixed_eur_per_h": 14.0,
+    "avg_speed_kmh": 62.0,
+    "load_unload_h": 2.0,
+    "fuel_l_per_100km": 31.0,
+    "diesel_eur_per_l_net": 1.55,
+    "tolls_eur_per_km": 0.12,
+    "overhead_pct": 0.12,
+    "carrier_margin_pct": 0.04,
+    "max_divergence": 0.25,
+    "source": "Modèle de coût de revient bottom-up (conducteur, véhicule, gazole, péages, frais généraux). Hypothèses de l'ordre de grandeur des indices CNR ; SECOND AVIS uniquement, ne fixe jamais le prix.",
+    "confidence": "low"
+  },
+  "decision": {
+    "late_cost_ratio": 0.5,
+    "source": "Coût attendu = prix × (1 + (1 − ponctualité) × ratio). Le ratio estime le coût d'un retard (pénalités, relivraison) en part du prix : HYPOTHÈSE à calibrer avec vos litiges réels.",
+    "confidence": "low"
+  }
+}

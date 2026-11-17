@@ -11,7 +11,7 @@
   <header class="top">
     <div class="wrap">
       <a class="brand" href="/">FRET<b>RAU</b></a>
-      <nav><a href="#comment">Comment ça marche</a><a href="#suivi">Suivre un envoi</a><a href="/transporteur.html">Transporteurs</a><a href="/portail.html">Espace client</a></nav>
+      <nav><a href="#comment">Comment ça marche</a><a href="#suivi">Suivre un envoi</a></nav>
     </div>
   </header>
 
@@ -20,8 +20,7 @@
       <div class="wrap grid">
         <div>
           <h1>Votre transport routier, <em>au prix juste</em>, en quelques clics.</h1>
-          <p class="lead">Camion complet, lot partiel ou palettes, France et Europe : un prix immédiat, des transporteurs vérifiés et un suivi de bout en bout.</p>
-          <p class="lead hidden" id="mail-quote">Vous préférez écrire ? Envoyez votre demande telle quelle à <b id="mail-quote-addr"></b> : le prix vous revient par e-mail.</p>
+          <p class="lead">Camion complet ou palettes, France et Europe : un prix immédiat, des transporteurs vérifiés et un suivi de bout en bout.</p>
           <div class="badges">
             <span class="badge">Prix instantané</span><span class="badge">Transporteurs contrôlés</span>
             <span class="badge">Suivi en temps réel</span><span class="badge">France + Europe</span>
@@ -31,22 +30,24 @@
         <div class="card" id="quote-card">
           <h2>Obtenir un prix</h2>
           <form id="quote-form" novalidate>
-            <div class="seg three" role="radiogroup" aria-label="Type de transport">
+            <div class="seg" role="radiogroup" aria-label="Type de transport">
               <input type="radio" name="mode" id="m-ftl" value="FTL" checked><label for="m-ftl">Camion complet</label>
-              <input type="radio" name="mode" id="m-ptl" value="PTL"><label for="m-ptl">Lot partiel</label>
               <input type="radio" name="mode" id="m-ltl" value="LTL"><label for="m-ltl">Palettes</label>
             </div>
             <div class="row">
-              <div><label for="origin">Départ</label><input id="origin" list="cities" autocomplete="off" required placeholder="Code postal ou ville"></div>
-              <div><label for="destination">Arrivée</label><input id="destination" list="cities" autocomplete="off" required placeholder="Code postal ou ville"></div>
+              <div><label for="origin">Départ</label><input id="origin" list="cities" autocomplete="off" required placeholder="Ville"></div>
+              <div><label for="destination">Arrivée</label><input id="destination" list="cities" autocomplete="off" required placeholder="Ville"></div>
             </div>
             <datalist id="cities"></datalist>
+            <p id="places-hint" class="muted small hidden">Pour l'instant, seules les grandes villes sont proposées. Pour une autre commune, envoyez-nous votre demande par e-mail.</p>
             <div class="row">
               <div><label for="pallets" id="pallets-label">Palettes (facultatif)</label><input id="pallets" type="number" min="1" max="33" inputmode="numeric"></div>
               <div><label for="weight">Poids total (kg)</label><input id="weight" type="number" min="1" max="24000" required inputmode="numeric"></div>
             </div>
-            <label for="pickup">Date d'enlèvement</label>
-            <input id="pickup" type="date" required>
+            <div class="row">
+              <div><label for="pickup">Date d'enlèvement</label><input id="pickup" type="date" required></div>
+              <div><label for="deliver-by">Livraison au plus tard (facultatif)</label><input id="deliver-by" type="date"></div>
+            </div>
             <label>Options</label>
             <div class="checks" id="options"></div>
             <button class="full" type="submit" id="quote-btn">Calculer mon prix</button>
@@ -59,6 +60,17 @@
     <section class="block" id="result-section" hidden>
       <div class="wrap row">
         <div class="card" id="result"></div>
+        <div class="card hidden" id="match-card">
+          <h2>Un devis moins cher ailleurs ?</h2>
+          <p class="muted small">Pour la même expédition (trajet, poids, date, options), nous étudions un alignement. Un justificatif pourra vous être demandé avant l'enlèvement.</p>
+          <form id="match-form" novalidate>
+            <label for="m-price">Prix HT du devis concurrent (€)</label><input id="m-price" type="number" min="1" step="0.01" inputmode="decimal" required>
+            <label for="m-ref">Référence (société, n° de devis)</label><input id="m-ref" maxlength="120" required>
+            <button class="full" type="submit" id="match-btn">Demander un alignement</button>
+            <div id="match-msg" class="muted small" role="status"></div>
+            <div id="match-error" class="err hidden" role="alert"></div>
+          </form>
+        </div>
         <div class="card hidden" id="book-card">
           <h2>Réserver ce transport</h2>
           <form id="book-form" novalidate>
@@ -73,8 +85,25 @@
             </div>
             <label for="pickup-address">Adresse d'enlèvement</label><input id="pickup-address" required>
             <label for="delivery-address">Adresse de livraison</label><input id="delivery-address" required>
+            <div class="row">
+              <div><label for="pw-start">Enlèvement : de</label><input id="pw-start" type="time" value="08:00" required></div>
+              <div><label for="pw-end">à</label><input id="pw-end" type="time" value="17:00" required></div>
+            </div>
+            <div class="row">
+              <div><label for="dw-start">Livraison : de</label><input id="dw-start" type="time" value="08:00" required></div>
+              <div><label for="dw-end">à</label><input id="dw-end" type="time" value="17:00" required></div>
+            </div>
+            <div class="row">
+              <div><label for="sc-name">Contact sur site</label><input id="sc-name" required autocomplete="off"></div>
+              <div><label for="sc-phone">Téléphone du contact</label><input id="sc-phone" type="tel" required autocomplete="off"></div>
+            </div>
             <label for="goods">Marchandise</label><input id="goods" required placeholder="Ex. palettes de carrelage">
-            <label class="checks"><input type="checkbox" id="cgv"> J'accepte les conditions générales de vente</label>
+            <div class="row">
+              <div><label for="goods-value">Valeur de la marchandise (€, facultatif)</label><input id="goods-value" type="number" min="0" inputmode="decimal"></div>
+              <div><label for="notes">Consignes de chargement (facultatif)</label><input id="notes" maxlength="300"></div>
+            </div>
+            <p class="muted small">Les données saisies servent à exécuter ce transport (voir la <a href="/legal/confidentialite.html" target="_blank" rel="noopener">politique de confidentialité</a>).</p>
+            <label class="checks"><input type="checkbox" id="cgv"> J'ai lu et j'accepte les <a href="/legal/cgv.html" target="_blank" rel="noopener">conditions générales de vente</a></label>
             <button class="full" type="submit" id="book-btn">Confirmer la réservation</button>
             <div id="book-error" class="err hidden" role="alert"></div>
           </form>
@@ -87,8 +116,8 @@
         <h2>Comment ça marche</h2>
         <div class="steps">
           <div class="card step"><b class="n">1</b><h3>Un prix immédiat</h3><p class="muted">Indiquez votre trajet et votre marchandise : le prix s'affiche tout de suite, taxes comprises.</p></div>
-          <div class="card step"><b class="n">2</b><h3>Le bon transporteur</h3><p class="muted">Nos agents écartent tout transporteur sans licence ni assurance valides, comparent les offres et négocient pour vous. Une équipe reprend la main dès qu'un cas sort du cadre.</p></div>
-          <div class="card step"><b class="n">3</b><h3>Un suivi simple</h3><p class="muted">Chaque étape vous est signalée par e-mail jusqu'à la livraison. Le prix réservé est le prix facturé.</p></div>
+          <div class="card step"><b class="n">2</b><h3>Le bon transporteur</h3><p class="muted">Nos agents vérifient licence et assurance, comparent les offres et négocient pour vous.</p></div>
+          <div class="card step"><b class="n">3</b><h3>Un suivi simple</h3><p class="muted">Suivez chaque étape jusqu'à la livraison et téléchargez la lettre de voiture.</p></div>
         </div>
       </div>
     </section>
@@ -108,7 +137,19 @@
     </section>
   </main>
 
-  <footer><div class="wrap">FRETRAU — projet de démonstration. Mentions légales, CGV et politique de confidentialité à compléter avant mise en ligne.</div></footer>
+  <footer><div class="wrap">
+    <span>© FRETRAU</span>
+    <a href="/legal/mentions-legales.html">Mentions légales</a>
+    <a href="/legal/cgv.html">CGV</a>
+    <a href="/legal/cgu.html">CGU</a>
+    <a href="/legal/confidentialite.html">Confidentialité</a>
+    <a href="/legal/cookies.html">Cookies</a>
+    <a href="#" id="cookie-manage">Gérer mes cookies</a>
+  </div></footer>
+  <div id="cookie-panel" class="card hidden" role="dialog" aria-label="Gestion des cookies">
+    <p><b>Cookies.</b> Ce site n'utilise que des traceurs strictement nécessaires, exemptés de consentement. Aucun traceur publicitaire ni de mesure d'audience n'est déposé.</p>
+    <button type="button" id="cookie-close">Fermer</button>
+  </div>
   <script src="/app.js"></script>
 </body>
 </html>

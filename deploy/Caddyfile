@@ -1,0 +1,20 @@
+# Caddy obtient et renouvelle AUTOMATIQUEMENT le certificat Let's Encrypt (HTTPS, HTTP/2, HTTP/3).
+# Prérequis : le nom de domaine pointe (enregistrement A/AAAA) vers ce serveur, ports 80 et 443 ouverts.
+# Remplacez fret.example.fr par votre domaine.
+fret.example.fr {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8080 {
+		header_up X-Forwarded-For {remote_host}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	request_body {
+		max_size 64KB
+	}
+	log {
+		output file /var/log/caddy/fretrau.log
+	}
+}
+# Redirection HTTP -> HTTPS automatique (comportement par défaut de Caddy).

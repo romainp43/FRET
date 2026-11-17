@@ -1,38 +1,26 @@
 # FRETRAU — plateforme de courtage de fret routier par IA (prototype)
 
-Prototype fonctionnel, écrit de zéro : site client, espace client, espace transporteur, API, agents IA, espace admin.
-Parcours en trois temps : **devis** immédiat (site ou e-mail en texte libre), **couverture** par un transporteur
-vérifié (offres, négociation, attribution), **livraison** suivie étape par étape puis règlement du transporteur.
-
-> Tant que la société n'est pas inscrite au registre des commissionnaires de transport, ce logiciel est une
-> démonstration : aucun transport réel ne doit être vendu avec. Voir `docs/DEMARRAGE.md`.
+Prototype fonctionnel, écrit de zéro : site client, API, agents IA, espace admin.
 Aucune dépendance externe (Python 3.11+ uniquement, SQLite intégré).
 
 ## Lancer
 
 ```bash
 FRETRAU_ADMIN_PASSWORD='un-mot-de-passe-long-et-unique' python3 server.py
-# Site : http://127.0.0.1:8080   Admin : /admin.html   Espace client : /portail.html   Transporteurs : /transporteur.html
-python3 -m unittest discover -s tests -v      # 58 tests
+# Site : http://127.0.0.1:8080   Admin : http://127.0.0.1:8080/admin.html (utilisateur : admin)
+python3 -m unittest discover -s tests -v      # 42 tests
 ```
 
 Variables : `PORT`, `HOST`, `FRETRAU_DB`, `FRETRAU_SECRET` (signature des sessions),
 `FRETRAU_HTTPS=1` (cookies Secure + HSTS, derrière un proxy TLS), `FRETRAU_TRUST_PROXY=1`,
-`FRETRAU_DEMO_SPEED=360` (suivi accéléré : 1 h simulée = 10 s), `ANTHROPIC_API_KEY` (rédaction des messages et lecture
-des e-mails par Claude), `FRETRAU_DEMO=0` (désactive les 13 transporteurs fictifs : seuls les transporteurs réels
-vérifiés reçoivent des offres), `FRETRAU_QUOTE_EMAIL` (adresse affichée pour les demandes de devis par e-mail),
-`FRETRAU_TARGET_MARGIN`, `FRETRAU_MIN_MARGIN`, `FRETRAU_FUEL_SURCHARGE` (règles de prix).
+`FRETRAU_DEMO_SPEED=360` (suivi accéléré : 1 h simulée = 10 s), `ANTHROPIC_API_KEY` (rédaction des messages par Claude).
 
 ## Architecture
 
 | Module | Rôle |
 |---|---|
-| `fretrau/pricing.py` | Moteur de devis FTL (au km), PTL (lot partiel) et LTL (palettes), options ADR / hayon / température / express / plateau, gazole, marge cible 12 % |
-| `fretrau/market.py` | Calage sur le marché : les prix réellement obtenus corrigent les devis suivants du même axe (borné à ±15 %) |
-| `fretrau/geo.py` | 6 051 codes postaux français + 41 villes France et Europe, distance routière estimée |
-| `fretrau/registry.py` | Transporteurs : prospects, candidats, vérifiés, exclus. Seuls les vérifiés sont affectables |
-| `fretrau/offers.py` | Offres de chargement aux transporteurs réels et décision sur leurs réponses (e-mail, portail, admin) |
-| `fretrau/agents/intake.py` | Agent de réception : lit une demande de devis en texte libre, chiffre, répond, ou demande ce qui manque |
+| `fretrau/pricing.py` | Moteur de devis FTL (au km) et LTL (palettes), options ADR / hayon / température / express, gazole, marge cible 12 % |
+| `fretrau/geo.py` | 41 villes France + Europe, distance routière estimée |
 | `fretrau/agents/compliance.py` | Agent de conformité : écarte licence absente, assurance expirée, liste noire, mode ou périmètre non couvert |
 | `fretrau/agents/sourcing.py` | Agent de comparaison : score pondéré prix 40 % / proximité 20 % / note 20 % / ponctualité 20 %, avec explication |
 | `fretrau/agents/negotiation.py` | Agent de négociation : offres successives bornées par un plafond garantissant la marge minimale (5 %), escalade humaine si pas d'accord |
@@ -43,28 +31,7 @@ vérifiés reçoivent des offres), `FRETRAU_QUOTE_EMAIL` (adresse affichée pour
 | `fretrau/booking.py` | Orchestration : conformité → classement → négociation (3 transporteurs max) → affectation |
 | `fretrau/security.py` | Limitation de débit, scrypt, sessions HMAC, verrouillage de connexion, validation |
 | `server.py` | API HTTP + fichiers statiques, en-têtes de sécurité |
-| `web/` | Site, espace client, espace transporteur, espace admin (aucun script ni style inline) |
-| `data/codes_postaux.csv` | Codes postaux et coordonnées (source : geo.api.gouv.fr) |
-| `data/transporteurs.csv` | Prospects transporteurs issus de l'Annuaire des Entreprises, triés par distance à Raucoules (43290) |
-| `tools/` | Scripts qui reconstruisent les deux fichiers de `data/` |
-
-## Le parcours
-
-1. **Devis** : sur le site (code postal ou ville) ou par e-mail (`POST /api/webhook/inbound-quote`, signé). Le prix est
-   bloqué 24 h. Un client connecté peut signaler un prix inférieur reçu ailleurs : la demande arrive à l'admin.
-2. **Couverture** : conformité, classement, puis offre envoyée aux 3 meilleurs transporteurs vérifiés. Ils répondent
-   par e-mail ou depuis leur espace. Sous le plafond d'achat : attribution au premier qui accepte. Jusqu'à 10 %
-   au-dessus : contre-proposition au plafond. Au-delà : un humain reprend. Personne, pas même l'admin, ne peut
-   attribuer sous la marge minimale.
-3. **Livraison** : le transporteur déclare chargement, départ, livraison (avec le nom du réceptionnaire). Le client
-   reçoit un e-mail à chaque étape. La livraison crée la dette transporteur, payable à 30 jours.
-
-## Transporteurs réels
-
-`data/transporteurs.csv` vient de données publiques (Licence Ouverte). Y figurent uniquement des sociétés actives,
-hors entrepreneurs individuels, hors entreprises opposées à l'utilisation commerciale de leurs données.
-Ce sont des **prospects** : aucun contact, aucune pièce contrôlée. Dans l'admin, « Importer les prospects » les charge
-par rayon ; un transporteur ne devient affectable qu'après contrôle humain de ses pièces et passage à « Vérifié ».
+| `web/` | Site client et espace admin (aucun script ni style inline) |
 
 ## Protections en place
 
@@ -87,14 +54,11 @@ par rayon ; un transporteur ne devient affectable qu'après contrôle humain de 
 
 ## Ce qui est simulé (à remplacer pour un usage réel)
 
-1. **Transporteurs de démonstration** : 13 sociétés fictives dans `carriers.py`, actives tant que `FRETRAU_DEMO` vaut 1.
-2. **Négociation** : simulée pour les sociétés fictives uniquement. Les transporteurs réels répondent pour de vrai.
+1. **Transporteurs** : 13 sociétés fictives dans `carriers.py`. À remplacer par votre référentiel vérifié (KBIS, licence, assurance) et des bourses de fret (Trans.eu, Timocom, Teleroute).
+2. **Négociation** : le transporteur est simulé. En réel, brancher e-mail/API/voix, extraire un montant validé par du code.
 3. **Distance** : formule à vol d'oiseau x coefficient. Brancher un service d'itinéraire (OSRM, HERE, Google Routes).
 4. **Tarifs** : paramètres de démonstration. Calibrer sur vos coûts réels et l'indice gazole CNR.
-5. **Suivi** : calendrier simulé pour les sociétés fictives ; déclaratif (par le transporteur) pour les réels. Pas de géolocalisation.
-9. **E-mails** : sans SMTP ni service d'e-mail entrant, les messages restent en file et les réponses se saisissent dans l'admin.
-10. **Adresses e-mail non vérifiées** à l'inscription, pas de réinitialisation de mot de passe, pas de dépôt de pièces (PDF) en ligne.
-11. **Tarifs** : barème de démonstration, non calé sur des prix de marché français.
+5. **Suivi** : calendrier simulé. En réel : télématique des transporteurs ou agrégateur de visibilité.
 6. **Lettre de voiture** : document de démonstration, pas un CMR conforme.
 7. **Paiement en ligne** et **facture électronique certifiée (Factur-X / plateforme agréée)** : non inclus. La facture fournie est à faire valider par un expert-comptable.
 8. **Chiffrement des données au repos** : utiliser un disque chiffré ou SQLCipher / PostgreSQL chiffré en production.
@@ -105,3 +69,54 @@ par rayon ; un transporteur ne devient affectable qu'après contrôle humain de 
 - Vérifier la disponibilité de la marque « FRETRAU » (INPI) et du nom de domaine.
 - CGV, mentions légales, politique de confidentialité, registre RGPD, procédure de suppression des données.
 - Déploiement derrière un reverse proxy TLS, base PostgreSQL, sauvegardes, supervision, audit de sécurité externe.
+
+---
+
+# Mise à jour v4 — coûts, agents, conformité, production
+
+## Calcul des coûts (config/tariff.json)
+Les tarifs sont des **données versionnées** (source + niveau de confiance par paramètre), pas du code. À maintenir :
+- **Chaque mois** : `market_index` (€/km camion complet, baromètre Upply/Ornikar-type ou vos propres coûts réels) et `fuel.index_now` (indice gazole professionnel du CNR, bimensuel). Le serveur recharge le fichier à chaud et affiche un avertissement si les données ont plus de 45 jours.
+- **Dès que vous avez de vrais prix transporteurs** : `python3 tools/calibrate.py` mesure l'erreur (MAPE), le biais et la couverture de l'intervalle, et propose des multiplicateurs corrigés (ajustement progressif n/(n+10)).
+- Les coefficients LTL, options et indices pays hors ES/DE/FR sont des **hypothèses à faible confiance** : ne les considérez pas comme fiables sans calibration.
+
+## Conformité
+`python3 tools/build_legal.py` génère `web/legal/*.html` (mentions légales, confidentialité, CGU, CGV, cookies) depuis `config/company.json` ; `--final` échoue tant qu'un champ « À COMPLÉTER » subsiste. **Brouillons à faire valider par un avocat.** Documents internes : `docs/REGISTRE-TRAITEMENTS.md`, `docs/RETENTION.md`, `docs/INCIDENT-VIOLATION-DONNEES.md`, `docs/SECURITE.md`.
+
+## Production
+1. Domaine → serveur, `deploy/Caddyfile` (HTTPS automatique) ou `deploy/nginx.conf` + certbot.
+2. `.env` d'après `.env.example` ; `docker compose up -d` ou `deploy/fretrau.service`.
+3. Comptes : `python3 tools/manage_users.py add alice admin` (2FA obligatoire).
+4. `deploy/fretrau-maintenance.timer` : sauvegarde + rétention chaque nuit ; ajoutez la copie externe.
+5. `python3 -m unittest discover -s tests` doit rester vert (CI GitHub Actions fournie).
+
+## Ce qui reste à faire par des humains
+Relecture juridique ; expert-comptable (TVA, facturation électronique) ; certificat TLS sur votre domaine ; vrai réseau de transporteurs et tarifs réels ; test d'intrusion ; vérification de la marque FRETRAU à l'INPI ; inscription au registre des commissionnaires de transport et assurance RC professionnelle ; contrats de sous-traitance RGPD.
+
+## v6 — fonctions inspirées des offres publiques de courtage de fret numérique
+- **Devis par e-mail en texte libre** : `POST /api/intake/email` (signé HMAC, comme le webhook transporteur). Extraction déterministe (`agents/intake.py`) ; si poids, date, villes ou palettes manquent, la réponse liste exactement ce qui manque, sans rien inventer. Les hypothèses (mode déduit, année supposée) sont affichées au client.
+- **Alignement sur devis concurrent** : `POST /api/ratematch` (`agents/ratematch.py`). Jamais sous le plancher de marge minimale, une seule fois par devis, devis incohérents renvoyés à un humain, justificatif signalé à l'opérateur à la réservation.
+- **Lien de devis** `/#devis=<id>` pour réserver depuis la réponse e-mail.
+- Second avis de coût, agent de risque (assurance vs valeur), décision multi-offres : voir `agents/`.
+
+## v7 — suivi réel, paiement transporteur, passerelle e-mail
+- **Suivi réel** : `POST /api/webhook/carrier-status` (signé HMAC) avec `{tracking_code, carrier_id, event}`, event ∈ loaded, in_transit, arrived, delivered. Un transporteur ne peut mettre à jour que ses expéditions ; les jalons sont idempotents et non réversibles. Mettre `FRETRAU_DEMO_TIMELINE=0` en production : plus aucun jalon simulé.
+- **Preuve de livraison** : par le transporteur (`delivered`) ou par un opérateur (`POST /api/admin/pod`, uniquement si un jalon de transport existe déjà).
+- **Paiement transporteur** : la livraison crée **une seule** créance au prix d'achat négocié (jamais le prix client), échéance = livraison + `FRETRAU_CARRIER_PAY_DAYS` (0–30). Écran « Paiements transporteurs » (rôles finance/admin) ; « marquer payé » exige une référence de virement et ne marche qu'une fois. **Aucun virement n'est émis par le logiciel** : votre banque ou votre comptable exécute le paiement.
+- **Passerelle e-mail** : `tools/mail_gateway.py` (IMAP/SMTP) + `deploy/fretrau-mailgate.service`. Ignore les réponses automatiques, limite par expéditeur, répond dans le fil. **À valider sur une boîte de test** : seule la logique est testée ici, pas une vraie boîte.
+- Base de villes étendue à 107 (alias locaux ; « Valence » ambiguë demandée au client). L'alignement tarifaire automatique est plafonné à -10 % ; au-delà, un opérateur valide.
+
+## v8 — Toutes les communes + voir le site sans rien connaître à Python
+
+### Voir le site (le plus simple)
+- **Windows** : installer Python 3 (python.org, cocher « Add python.exe to PATH »), dézipper, double-cliquer `LANCER-WINDOWS.bat`.
+- **Mac** : installer Python 3, dézipper, double-cliquer `LANCER-MAC.command` (au premier lancement : clic droit → Ouvrir).
+- **En ligne, sans rien installer** : mettre le dossier sur GitHub puis (a) *Codespaces* (`.devcontainer/` fourni : le site s'ouvre dans le navigateur) ou (b) *Render* (`render.yaml` fourni : « New + » → « Blueprint » → lien public https).
+- **Docker** : `docker compose up`.
+
+### Toutes les communes
+Le référentiel complet n'est PAS dans le ZIP (fichier volumineux, licences à respecter). Il s'installe automatiquement au premier lancement (Internet requis), ou à la main : `python3 tools/import_places.py`.
+- France : toutes les communes (geo.api.gouv.fr, Licence Ouverte) ; Corse et outre-mer exclues pour l'instant (hors zone desservie).
+- Europe (ES PT IT BE NL LU DE AT CH PL) : localités ≥ 500 habitants (GeoNames, CC-BY 4.0 — mention « Données GeoNames » à conserver).
+- Sans import, le site fonctionne avec 107 grandes villes et l'annonce clairement (administration : « référentiel complet NON installé »).
+- Une commune ambiguë (ex. Saint-Martin) demande le code postal ; la saisie accepte aussi un code postal seul.

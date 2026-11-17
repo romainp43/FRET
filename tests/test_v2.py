@@ -20,7 +20,9 @@ from fretrau import security, mailer  # noqa: E402
 from fretrau.db import DB  # noqa: E402
 from fretrau.agents import email_agent  # noqa: E402
 
-PICKUP = (date.today() + timedelta(days=3)).isoformat()
+from fretrau import calendar_fr  # noqa: E402
+
+PICKUP = calendar_fr.next_business_day(date.today() + timedelta(days=3)).isoformat()
 WH_SECRET = os.environ["FRETRAU_WEBHOOK_SECRET"]
 
 

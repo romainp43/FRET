@@ -1,0 +1,21 @@
+{
+  "name": "[À COMPLÉTER : dénomination sociale]",
+  "brand": "FRETRAU",
+  "legal_form": "[À COMPLÉTER : forme juridique, ex. SAS]",
+  "capital": "[À COMPLÉTER : capital social]",
+  "address": "[À COMPLÉTER : adresse du siège social]",
+  "rcs": "[À COMPLÉTER : RCS ville + numéro]",
+  "siret": "[À COMPLÉTER : SIRET]",
+  "vat": "[À COMPLÉTER : n° TVA intracommunautaire]",
+  "phone": "[À COMPLÉTER : téléphone]",
+  "email": "[À COMPLÉTER : e-mail de contact]",
+  "dpo_email": "[À COMPLÉTER : e-mail pour l'exercice des droits RGPD]",
+  "director": "[À COMPLÉTER : nom du directeur de la publication]",
+  "transport_licence": "[À COMPLÉTER : n° d'inscription au registre des commissionnaires de transport]",
+  "insurance": "[À COMPLÉTER : assureur et n° de police de la responsabilité civile professionnelle]",
+  "host_name": "[À COMPLÉTER : nom de l'hébergeur]",
+  "host_address": "[À COMPLÉTER : adresse de l'hébergeur]",
+  "host_phone": "[À COMPLÉTER : téléphone de l'hébergeur]",
+  "court": "[À COMPLÉTER : ville du tribunal de commerce compétent]",
+  "domain": "[À COMPLÉTER : nom de domaine]"
+}

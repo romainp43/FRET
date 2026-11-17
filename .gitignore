@@ -1,9 +1,10 @@
-fretrau.db
-*.db
-__pycache__/
-*.pyc
 .env
-
+*.db
+*.db.gz
+*.age
+backups/
+data/
+__pycache__/
 __pycache__/
 *.pyc
 data/*.db

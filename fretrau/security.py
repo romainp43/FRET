@@ -114,6 +114,28 @@ PHONE_RE = re.compile(r"^[0-9+()\-. ]{6,20}$")
 CODE_RE = re.compile(r"^FR-[0-9A-F]{12}$")
 
 
+WINDOW_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$")
+
+
+def clean_window(value) -> str:
+    """Créneau « HH:MM-HH:MM », fin postérieure au début d'au moins 1 h."""
+    if not isinstance(value, str) or not WINDOW_RE.match(value):
+        raise ValueError("Créneau horaire invalide (format 08:00-12:00).")
+    h1, m1, h2, m2 = (int(x) for x in re.split(r"[:-]", value))
+    if (h2 * 60 + m2) - (h1 * 60 + m1) < 60:
+        raise ValueError("Le créneau horaire doit durer au moins 1 heure.")
+    return value
+
+
+def clean_amount(value, max_value=5_000_000):
+    """Montant facultatif (valeur de marchandise) : None ou nombre positif borné."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= max_value:
+        raise ValueError("Valeur de marchandise invalide.")
+    return float(value)
+
+
 def clean_text(value, max_len=200) -> str:
     if not isinstance(value, str):
         raise ValueError("Champ texte attendu.")
@@ -162,14 +184,3 @@ def parse_amount(text: str, lo: float = 20.0, hi: float = 20000.0):
         if lo <= value <= hi:
             found.add(round(value, 2))
     return found.pop() if len(found) == 1 else None
-
-
-def valid_siret(siret: str) -> bool:
-    """14 chiffres et clé de Luhn correcte."""
-    if not isinstance(siret, str) or not re.fullmatch(r"\d{14}", siret):
-        return False
-    total = 0
-    for i, ch in enumerate(reversed(siret)):
-        n = int(ch) * (2 if i % 2 else 1)
-        total += n - 9 if n > 9 else n
-    return total % 10 == 0

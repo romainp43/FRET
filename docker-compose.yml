@@ -1,0 +1,24 @@
+# docker compose up -d   (copiez .env.example vers .env et remplissez-le ; ne committez jamais .env)
+services:
+  app:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - fretrau-data:/data
+    ports:
+      - "127.0.0.1:8080:8080"     # exposé uniquement au proxy local, jamais directement à Internet
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+volumes:
+  fretrau-data:
+  caddy-data:

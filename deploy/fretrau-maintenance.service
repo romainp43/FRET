@@ -1,0 +1,11 @@
+[Unit]
+Description=FRETRAU - sauvegarde puis maintenance RGPD
+[Service]
+Type=oneshot
+User=fretrau
+EnvironmentFile=/etc/fretrau.env
+WorkingDirectory=/opt/fretrau
+ExecStart=/usr/bin/python3 tools/backup.py backup --dest /var/backups/fretrau --keep 30
+ExecStart=/usr/bin/python3 tools/maintenance.py
+# Copie EXTERNE (autre fournisseur) : adaptez, ex. rclone sync /var/backups/fretrau remote:fretrau-backups
+# ExecStart=/usr/bin/rclone sync /var/backups/fretrau remote:fretrau-backups
