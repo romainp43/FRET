@@ -50,10 +50,29 @@ def db_path():
     return os.environ.get("FRETRAU_PLACES_DB", DEFAULT_DB)
 
 
+SEED = os.path.join(ROOT, "seed", "places.db.gz")
+
+
+def _install_seed(path):
+    """Première utilisation : décompresse le référentiel livré (seed/places.db.gz) vers data/places.db."""
+    import gzip
+    import shutil
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with gzip.open(SEED, "rb") as src, open(tmp, "wb") as dst:
+        shutil.copyfileobj(src, dst)
+    os.replace(tmp, path)
+
+
 def _db():
     path = db_path()
     with _lock:
         if path not in _conn:
+            if not os.path.exists(path) and path == DEFAULT_DB and os.path.exists(SEED):
+                try:
+                    _install_seed(path)
+                except OSError:
+                    pass
             if not os.path.exists(path):
                 _conn[path] = None
             else:

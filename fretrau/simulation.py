@@ -27,6 +27,29 @@ LANES = [("Lyon", "Paris"), ("Paris", "Marseille"), ("Lille", "Lyon"), ("Bordeau
          ("Lille", "Bruxelles"), ("Strasbourg", "Munich"), ("Madrid", "Lyon"), ("Rennes", "Bordeaux"), ("Nancy", "Paris")]
 
 
+_LABELS = None
+
+
+def _lane(rng):
+    """Moitié des envois sur les grands axes, moitié entre communes tirées au hasard dans tout le référentiel (campagne comme petits villages)."""
+    global _LABELS
+    if rng.random() < 0.5:
+        return rng.choice(LANES)
+    if _LABELS is None:
+        import sqlite3
+        from . import places
+        try:
+            con = sqlite3.connect(f"file:{places.db_path()}?mode=ro", uri=True)
+            _LABELS = [r[0] for r in con.execute("SELECT label FROM places ORDER BY id")]
+            con.close()
+        except sqlite3.Error:
+            _LABELS = []
+    if len(_LABELS) < 1000:
+        return rng.choice(LANES)
+    o, d = rng.choice(_LABELS), rng.choice(_LABELS)
+    return (o, d) if o != d else rng.choice(LANES)
+
+
 @dataclass(frozen=True)
 class Params:
     weights_normal: tuple = sourcing.W_NORMAL
@@ -55,12 +78,15 @@ def episode(seed, params: Params, penalty=None):
     rng = random.Random(seed)
     penalty = rng.uniform(*PENALTY_RANGE) if penalty is None else penalty
     observed, truth = _world(rng, penalty)
-    o, d = rng.choice(LANES)
+    o, d = _lane(rng)
     mode = rng.choice(["FTL", "LTL", "FTL"])
     pallets = 33 if mode == "FTL" else rng.randint(2, 10)
     weight = 15000 if mode == "FTL" else pallets * rng.randint(200, 700)
     pickup = calendar_fr.next_business_day(date(2026, 12, 1) + timedelta(days=rng.randint(0, 20)))
-    q = pricing.build_quote(o, d, mode, pallets, weight, {}, pickup)
+    try:
+        q = pricing.build_quote(o, d, mode, pallets, weight, {}, pickup)
+    except pricing.QuoteError:
+        return None                                   # liaison hors règles du devis : monde ignoré, jamais compté
     tight_deadline = None
     if rng.random() < 0.25:
         tight_deadline = date.fromisoformat(q.earliest_delivery) + timedelta(days=rng.choice([0, 1]))

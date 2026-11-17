@@ -16,7 +16,7 @@
     ]
   },
   "decision": {
-    "late_cost_ratio": 0.84,
+    "late_cost_ratio": 0.5,
     "candidates": 5
   },
   "negotiation": {
@@ -30,13 +30,13 @@
   },
   "report": {
     "candidates_tried": 800,
-    "baseline_regret_test_pct": 7.39,
-    "tuned_regret_test_pct": 6.04,
-    "test_gain_pts": 1.35,
-    "test_gain_se": 0.08,
-    "valid_gain_pts": 1.41,
-    "adopted": true,
-    "agreement_rate_test": 0.995,
+    "baseline_regret_test_pct": 5.87,
+    "tuned_regret_test_pct": 5.87,
+    "test_gain_pts": 0.0,
+    "test_gain_se": 0.0,
+    "valid_gain_pts": -0.01,
+    "adopted": false,
+    "agreement_rate_test": 0.994,
     "worlds": {
       "train": 500,
       "valid": 1500,

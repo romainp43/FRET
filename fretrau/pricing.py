@@ -53,6 +53,13 @@ class Quote:
     tariff_version: str = ""
     km_source: str = ""
     earliest_delivery: str = ""
+    co2_kg: float = 0.0
+
+
+def co2_estimate(km: float, weight_kg: float, t=None) -> float:
+    """kg CO2e indicatifs = distance x tonnes x facteur par défaut (tariff.json → co2). Jamais présenté comme le calcul réglementaire."""
+    t = t or tariff.load()
+    return round(km * (weight_kg / 1000.0) * t["co2"]["kg_per_tkm"], 0)
 
 
 def _country_factor(t, origin, destination):
@@ -185,7 +192,7 @@ def build_quote(origin, destination, mode, pallets, weight_kg, options=None, pic
         breakdown=est["lines"], options=options, pallets=pallets, weight_kg=float(weight_kg),
         taxable_units=est["units"], cost_low=est["low"], cost_high=est["high"], uncertainty=est["uncertainty"],
         warnings=est["warnings"], tariff_version=t["version"], km_source=routing.distance(origin, destination)[1],
-        earliest_delivery=earliest)
+        earliest_delivery=earliest, co2_kg=co2_estimate(km, float(weight_kg), t))
 
 
 def indicative(kind, origin, destination, pallets, weight_kg, pickup=None):

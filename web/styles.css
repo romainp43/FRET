@@ -129,3 +129,6 @@ details p { margin: 10px 0 2px; color: var(--ink-2); }
 .diff-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
 footer .small { font-size: 12px; }
 @media (max-width: 700px) { .row { grid-template-columns: 1fr; } header.top nav { display: none; } }
+
+ul.included { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 6px; font-size: 14px; }
+ul.included li::before { content: "✓ "; color: var(--ok, #1a7f4b); font-weight: 700; }

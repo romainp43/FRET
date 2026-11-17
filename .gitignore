@@ -5,5 +5,7 @@
 .env
 __pycache__/
 backups/
-data/
 data/*.db
+
+!seed/
+!seed/places.db.gz

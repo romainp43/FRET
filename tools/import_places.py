@@ -12,6 +12,7 @@ depuis le continent, traversée maritime non modélisée) : Corse, outre-mer, Si
 Le fichier produit (data/places.db) est remplacé atomiquement : le serveur peut tourner pendant l'import.
 """
 import argparse
+import re
 import csv
 import io
 import json
@@ -75,9 +76,66 @@ def geonames_rows(data: bytes, countries):
             yield {"name": r[1], "country": cc, "postal": [], "lat": lat, "lon": lon, "pop": int(r[14] or 0), "gid": r[0]}
 
 
-def build(db_path, fr_data=None, gn_data=None, countries=None):
+SMALL = {"sur", "sous", "en", "de", "du", "des", "la", "le", "les", "et", "aux", "au", "d", "l", "lès", "lez", "a", "à"}
+
+
+def pretty_fr(name: str) -> str:
+    """« ST MARTIN DES CHAMPS » → « Saint-Martin des Champs » (la base La Poste est en capitales sans accents)."""
+    words = name.lower().replace("'", "' ").split()
+    out = []
+    for i, w in enumerate(words):
+        w = {"st": "saint", "ste": "sainte"}.get(w, w)
+        out.append(w if (i > 0 and w in SMALL) else w[:1].upper() + w[1:])
+    txt = " ".join(out).replace("' ", "'")
+    return re.sub(r"\b(Saint|Sainte) ", r"\1-", txt)
+
+
+def laposte_rows(data: list, accent_names: dict = None):
+    """Base La Poste (INSEE, code postal, nom, GPS) → une ligne par commune. Exclut la Corse, les DROM-COM et Monaco (pas de route continue
+    avec le reste du réseau). `accent_names` : nom normalisé → nom accentué (repris de GeoNames) pour embellir l'affichage."""
+    communes = {}
+    for x in data:
+        insee = str(x.get("Code_commune_INSEE", "")).upper().zfill(5)
+        if insee.startswith(("97", "98", "2A", "2B")):
+            continue
+        c = communes.setdefault(insee, {"name": x["Nom_commune"], "postal": [], "pts": []})
+        pc = str(x.get("Code_postal", "")).zfill(5)
+        if pc not in c["postal"]:
+            c["postal"].append(pc)
+        try:
+            la, lo = (float(v) for v in str(x.get("coordonnees_gps", "")).split(","))
+            c["pts"].append((la, lo))
+        except ValueError:
+            pass
+    rows, nogps = [], 0
+    for insee, c in communes.items():
+        if not c["pts"]:
+            nogps += 1
+            continue
+        nm = places.normalize(c["name"])
+        name = (accent_names or {}).get(nm) or pretty_fr(c["name"])
+        rows.append({"name": name, "country": "FR", "postal": c["postal"], "lat": sum(p[0] for p in c["pts"]) / len(c["pts"]),
+                     "lon": sum(p[1] for p in c["pts"]) / len(c["pts"]), "pop": 0, "insee": insee})
+    return rows, nogps
+
+
+def cities_json_rows(data: list, countries):
+    """GeoNames (cities.json : population > 1000 ou chef-lieu administratif) pour les pays desservis hors France."""
+    for c in data:
+        cc = c.get("country")
+        if cc not in countries or cc == "FR":
+            continue
+        lat, lon = float(c["lat"]), float(c["lng"])
+        if is_island(lat, lon):
+            continue
+        yield {"name": c["name"], "country": cc, "postal": [], "lat": lat, "lon": lon, "pop": 0}
+
+
+def build(db_path, fr_data=None, gn_data=None, countries=None, rows_override=None):
     countries = countries or {c for c in tariff.load()["country_cost_index"] if len(c) == 2}
     rows = []
+    if rows_override is not None:
+        rows = list(rows_override)
     if fr_data is not None:
         rows += [r for r, _ in french_rows(fr_data)]
     if gn_data is not None:
@@ -106,7 +164,7 @@ def build(db_path, fr_data=None, gn_data=None, countries=None):
         for pc in r["postal"]:
             con.execute("INSERT INTO place_postal(postal, place_id) VALUES (?,?)", (pc, i))
     con.execute("INSERT OR REPLACE INTO meta VALUES ('built_at', datetime('now'))")
-    con.execute("INSERT OR REPLACE INTO meta VALUES ('sources', 'geo.api.gouv.fr ; GeoNames cities500 (CC-BY 4.0)')")
+    con.execute("INSERT OR REPLACE INTO meta VALUES ('sources', 'Base officielle des codes postaux (La Poste, data.gouv.fr) ou geo.api.gouv.fr ; GeoNames (CC-BY 4.0)')")
     con.commit()
     con.close()
     os.replace(tmp, db_path)
@@ -120,7 +178,20 @@ def main():
     ap.add_argument("--fr", default=FR_URL)
     ap.add_argument("--geonames", default=GEONAMES_URL)
     ap.add_argument("--no-europe", action="store_true")
+    ap.add_argument("--laposte", help="fichier JSON de la base La Poste (communes + codes postaux + GPS), au lieu de geo.api.gouv.fr")
+    ap.add_argument("--cities", help="fichier cities.json (GeoNames), au lieu du téléchargement GeoNames")
     a = ap.parse_args()
+    if a.laposte:
+        countries = {c for c in tariff.load()["country_cost_index"] if len(c) == 2}
+        with open(a.cities, encoding="utf-8") as f:
+            cities = json.load(f)
+        accents = {places.normalize(c["name"]): c["name"] for c in cities if c.get("country") == "FR"}
+        with open(a.laposte, encoding="utf-8") as f:
+            fr, nogps = laposte_rows(json.load(f), accents)
+        eu = list(cities_json_rows(cities, countries))
+        n = build(a.db, rows_override=fr + eu)
+        print(f"{len(fr)} communes françaises ({nogps} sans coordonnées ignorées) + {len(eu)} localités européennes = {n} lieux dans {a.db}")
+        return
     print("Lecture des communes françaises…")
     fr = read_source(a.fr)
     gn = None if a.no_europe else read_source(a.geonames)

@@ -46,3 +46,7 @@ Conformité (`compliance`), sourcing, négociation, décision, risque (`risk`), 
 ## Banc d'essai du modèle de prix
 
 `python3 tools/backtest_market.py` compare le prix d'achat estimé aux relevés publics de `data/market_benchmarks.json` (Upply/Ti/IRU T3 2026). Écart absolu moyen actuel : 7,3 % sur 4 liaisons (biais −6,9 %). Quatre liaisons ne prouvent rien de solide : le vrai recalage viendra des réponses des transporteurs (agent `rfq`).
+
+
+## Mise à jour : réentraînement sur trajets élargis (communes réelles)
+Le simulateur tire désormais ses trajets dans la base complète des lieux. Sur ce simulateur élargi, la recherche de paramètres (800 candidats) **n'a pas été adoptée** : gain test 0,0 point, gain validation −0,01. Les réglages livrés sont donc ceux de base (regret ≈ 5,87 %), sans gain revendiqué. Les chiffres 7,39 → 6,04 (+1,35) ci-dessus concernent l'ancien simulateur à 15 trajets et ne sont plus à présenter comme performance actuelle.

@@ -531,6 +531,7 @@ class Handler(BaseHTTPRequestHandler):
             "breakdown": {k: round(v * scale, 2) for k, v in q["breakdown"].items()},
             "valid_hours": 24, "mode": q["mode"], "origin": q["origin"], "destination": q["destination"],
             "earliest_delivery": q["earliest_delivery"], "warnings": q["warnings"], "pallets": q["pallets"],
+            "co2_kg": q.get("co2_kg", 0.0),
         }
 
     def api_quote_get(self, quote_id):

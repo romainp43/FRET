@@ -1,0 +1,14 @@
+{
+  "note": "Relevés publics de prix de marché (€/km, ensemble articulé, lot complet). Servent à MESURER l'écart du modèle, jamais à fixer un prix. Les prix contractuels et spot Upply sont des moyennes de liaison, pas des prix d'un envoi précis.",
+  "lanes": [
+    {"origin": "Duisbourg", "destination": "Lille", "contract": 2.10, "spot": 2.21, "period": "T3 2026", "source": "Upply / Ti / IRU, European Road Freight Rate Benchmark, relayé par trans.info"},
+    {"origin": "Madrid", "destination": "Paris", "contract": 1.36, "spot": 1.48, "period": "T3 2026", "source": "Upply / Ti / IRU, relayé par trans.info"},
+    {"origin": "Varsovie", "destination": "Duisbourg", "contract": 1.55, "spot": 1.65, "period": "T3 2026", "source": "Upply / Ti / IRU, relayé par trans.info"},
+    {"origin": "Anvers", "destination": "Duisbourg", "contract": 2.74, "spot": 3.02, "period": "T3 2026", "source": "Upply / Ti / IRU, relayé par trans.info (court trajet : €/km élevé)"}
+  ],
+  "france_reference": [
+    {"label": "Indice Upply route France, juillet 2026", "eur_per_km": 1.756, "source": "config/tariff.json (market_index)"},
+    {"label": "Prix moyen indicatif ensemble articulé 2026", "low": 1.50, "high": 1.90, "source": "Dashdoc, prix du transport routier au km (2026)"},
+    {"label": "Coût de revient médian 120 axes français, péages compris, retour rechargé", "eur_per_km": 1.78, "source": "cotafret.fr, trinôme CNR (coût, pas prix de vente)"}
+  ]
+}

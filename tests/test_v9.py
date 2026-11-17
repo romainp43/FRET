@@ -373,5 +373,19 @@ class MarketBacktest(unittest.TestCase):
         self.assertGreaterEqual(len(rows), 4)
 
 
+class StressAndCo2(unittest.TestCase):
+    def test_stress_chain_has_no_anomaly(self):
+        import stress_agents
+        r = stress_agents.run(150, 3, out=lambda *_: None)
+        self.assertEqual(r["errors"], [])
+        self.assertGreater(r["total"], 100)
+
+    def test_co2_estimate_scales_with_distance_and_weight(self):
+        a = pricing.co2_estimate(500, 10000)
+        self.assertEqual(a, round(500 * 10 * 0.0875))
+        self.assertGreater(pricing.co2_estimate(1000, 10000), a)
+        self.assertEqual(pricing.co2_estimate(500, 0), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

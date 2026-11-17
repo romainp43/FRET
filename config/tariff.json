@@ -143,5 +143,11 @@
     "uncertainty_im": 0.3,
     "confidence": "low",
     "source": "Hypothèses de travail (aucune donnée de marché fiable pour ces deux modes) : lot partiel = part du camion occupée (mètres de plancher ou poids) x 1,3 ; combiné = 85 % du prix du camion complet + 220 € de frais de terminaux. À remplacer par vos tarifs réels."
+  },
+  "co2": {
+    "kg_per_tkm": 0.0875,
+    "as_of": "2026",
+    "confidence": "medium",
+    "source": "Facteur par défaut Base Empreinte ADEME (amont inclus) pour un ensemble articulé de 34 à 40 t, 0,0875 kgCO2e par tonne-kilomètre, tel que rapporté par projetcelsius.com. Estimation INDICATIVE : l'information CO2 réglementaire (art. L1431-3 du code des transports) se calcule sur la prestation réelle et doit être fournie par le prestataire. À valider sur base-empreinte.ademe.fr."
   }
 }

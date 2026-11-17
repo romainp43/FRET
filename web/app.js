@@ -102,6 +102,12 @@ function renderQuote(q, body) {
     el("p", { class: "muted" }, q.vat > 0 ? `${eur(q.price_ttc)} TTC (TVA 20 %)` : "Transport international : TVA selon régime applicable (autoliquidation possible)."),
     el("table", { class: "lines" }, ...Object.entries(q.breakdown).map(([k, v]) => el("tr", {}, el("td", {}, LABELS[k] || k), el("td", {}, eur(v))))),
     q.earliest_delivery ? el("p", { class: "muted" }, `Livraison au plus tôt le ${q.earliest_delivery}.`) : "",
+    el("ul", { class: "included" },
+      el("li", {}, "Prix ferme pendant 24 h, puis figé à la réservation"),
+      el("li", {}, "Lettre de voiture et suivi par jalons inclus"),
+      el("li", {}, "Transporteur contrôlé (licence, assurance, équipement) avant l'affectation"),
+      el("li", {}, "Moins cher ailleurs pour la même expédition ? Demandez un alignement"),
+      q.co2_kg ? el("li", {}, `Émissions estimées : environ ${Math.round(q.co2_kg).toLocaleString("fr-FR")} kg CO₂e (estimation indicative ; l'information CO₂ officielle vous est remise après le transport)`) : ""),
     ...(q.warnings || []).map((w) => el("p", { class: "warn" }, w)),
     el("p", { class: "muted" }, `Prix valable ${q.valid_hours} h.`),
   );

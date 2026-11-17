@@ -30,7 +30,7 @@ Source de comparaison : les onglets et fonctions visibles sur linklane.ai (pages
 | Fonction | Où | État |
 |---|---|---|
 | Prix instantané FTL/messagerie, intervalle, marge | `pricing.py`, `tariff.json` | ✅ code ; 🧪 **les coefficients tarifaires sont des hypothèses**, à recaler sur vos vrais coûts |
-| Toutes les communes (France + Europe) | `places.py`, `tools/import_places.py` | ✅ architecture ; **⛔ l'import complet exige un accès Internet** (non disponible ici, lancez `python3 tools/import_places.py` chez vous) |
+| Toutes les communes (France + Europe) | `places.py`, `tools/import_places.py` | ✅ 70 353 lieux livrés dans `seed/places.db.gz` (35 434 communes françaises hors Corse/outre-mer + 34 919 localités de plus de 1 000 habitants dans les pays desservis) ; `tools/import_places.py` permet de rafraîchir |
 | Conformité transporteur (licence, assurance, équipement, pays) | agent `compliance` | ✅ |
 | Classement des transporteurs | agent `sourcing` (poids appris + règle de ponctualité) | 🧪 |
 | Négociation automatique | agent `negotiation` (transporteurs simulés) | 🧪 jamais testée face à de vrais transporteurs |
@@ -64,7 +64,7 @@ Source de comparaison : les onglets et fonctions visibles sur linklane.ai (pages
 
 ## 3. Ce qui reste à faire dans le monde réel
 
-1. Importer les communes complètes (une commande, avec Internet).
+1. Communes : déjà livrées (seed). Rafraîchir si besoin.
 2. Recaler `config/tariff.json` sur vos vrais coûts transporteurs (`tools/calibrate.py`).
 3. Recruter des transporteurs réels ; les contrôles `vetting` + `verify_remote` aident à les valider.
 4. Faire relire par un avocat : CGV, charte transporteur, mentions légales, politique de confidentialité.
