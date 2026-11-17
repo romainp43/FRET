@@ -61,6 +61,7 @@ RL_ACCT = security.RateLimiter(5, 900)
 
 DB_ = DB(os.environ.get("FRETRAU_DB", os.path.join(ROOT, "fretrau.db")))
 RL_GLOBAL = security.RateLimiter(120, 60)
+TEMPERATURE_RANGES = {"+2/+4 °C": "Frais (+2 à +4 °C)", "0/+2 °C": "Frais (0 à +2 °C)", "-18 °C": "Surgelé (−18 °C)", "-25 °C": "Surgelé (−25 °C)", "+15/+25 °C": "Tempéré (+15 à +25 °C)"}
 RL_QUOTE = security.RateLimiter(20, 60)
 RL_BOOK = security.RateLimiter(5, 600)
 RL_LOGIN = security.RateLimiter(10, 900)
@@ -208,7 +209,7 @@ class Handler(BaseHTTPRequestHandler):
     # ---------- API ----------
     def api(self, method, path):
         if method == "GET" and path == "/api/cities":
-            return self.send_json(200, {"cities": sorted(geo.CITIES), "options": pricing.OPTIONS, "llm": llm.available(),
+            return self.send_json(200, {"cities": sorted(geo.CITIES), "options": pricing.OPTIONS, "temperature_ranges": TEMPERATURE_RANGES, "llm": llm.available(),
                                         "coverage": {"complete": places.available(), "places": places.count() + len(geo.CITIES)}})
         if method == "GET" and path == "/api/places":
             if not RL_TRACK.allow(self.ip()):
@@ -522,6 +523,9 @@ class Handler(BaseHTTPRequestHandler):
         quote_id = secrets.token_urlsafe(12)
         shipment = {"pallets": q.pallets, "weight_kg": weight, "pickup_date": pickup.isoformat(),
                     "deliver_by": deliver_by.isoformat() if deliver_by else None, "options": q.options}
+        trange = d.get("temperature_range")
+        if q.options.get("temperature") and trange in TEMPERATURE_RANGES:
+            shipment["temperature_range"] = trange
         DB_.save_quote(quote_id, {"quote": asdict(q), "shipment": shipment})
         view = self.quote_view(quote_id, asdict(q))
         view["alternatives"] = self.quote_alternatives(origin, destination, mode, pallets, weight, options,
@@ -798,7 +802,7 @@ class Handler(BaseHTTPRequestHandler):
         s, cu = json.loads(b["shipment"]), json.loads(b["customer"])
         e = lambda v: html.escape(str(v))                       # noqa: E731 — échappement XSS
         rows = [("Expéditeur", f"{cu['name']} — {cu['company']}"), ("Lieu d'enlèvement", s["pickup_address"]),
-                ("Lieu de livraison", s["delivery_address"]), ("Marchandise", s["goods"]),
+                ("Lieu de livraison", s["delivery_address"]), ("Marchandise", s["goods"]), ("Plage de température", TEMPERATURE_RANGES.get(s.get("temperature_range"), "—")),
                 ("Palettes", s.get("pallets")), ("Poids (kg)", s["weight_kg"]),
                 ("Date d'enlèvement", f"{s['pickup_date']} — créneau {s.get('pickup_window', '')}"),
                 ("Livraison", f"créneau {s.get('delivery_window', '')}" + (f" — au plus tard le {s['deliver_by']}" if s.get('deliver_by') else "")),

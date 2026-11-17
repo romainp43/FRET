@@ -54,6 +54,17 @@ class Api(unittest.TestCase):
         with urllib.request.urlopen(self.base + "/api/quote/" + alt["quote_id"]) as r:
             self.assertEqual(json.loads(r.read())["price_ht"], alt["price_ht"])
 
+    def test_temperature_range_stored_in_shipment(self):
+        body = {"origin": "Lyon", "destination": "Paris", "mode": "FTL", "pallets": 20, "weight_kg": 12000,
+                "pickup_date": (date.today() + timedelta(days=2)).isoformat(), "options": {"temperature": True},
+                "temperature_range": "-18 °C"}
+        q = self.post("/api/quote", body)
+        stored = self.server.DB_.get_quote(q["quote_id"])
+        self.assertEqual(stored["shipment"]["temperature_range"], "-18 °C")
+        body["temperature_range"] = "n'importe quoi"
+        q2 = self.post("/api/quote", body)
+        self.assertNotIn("temperature_range", self.server.DB_.get_quote(q2["quote_id"])["shipment"])
+
     def test_friendly_404_for_browsers_and_json_for_api(self):
         req = urllib.request.Request(self.base + "/n-existe-pas", headers={"Accept": "text/html"})
         with self.assertRaises(urllib.error.HTTPError) as c:
@@ -70,3 +81,9 @@ class Api(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Temperature(unittest.TestCase):
+    def test_range_saved_with_quote_option(self):
+        import server
+        self.assertIn("-18 °C", server.TEMPERATURE_RANGES)

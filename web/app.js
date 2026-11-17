@@ -53,6 +53,10 @@ async function init() {
   Object.entries(info.options).forEach(([key, label]) => {
     box.append(el("label", {}, el("input", { type: "checkbox", "data-opt": key }), label));
   });
+  const tsel = $("temp-range");
+  Object.entries(info.temperature_ranges || {}).forEach(([k, label]) => tsel.append(el("option", { value: k }, label)));
+  const tcheck = document.querySelector("[data-opt=temperature]");
+  if (tcheck) tcheck.addEventListener("change", () => $("temp-row").classList.toggle("hidden", !tcheck.checked));
   const today = new Date(); today.setDate(today.getDate() + 1);
   $("pickup").value = today.toISOString().slice(0, 10);
   $("pickup").min = new Date().toISOString().slice(0, 10);
@@ -85,6 +89,7 @@ $("quote-form").addEventListener("submit", async (e) => {
     weight_kg: parseFloat($("weight").value), pickup_date: $("pickup").value, options,
   };
   if ($("deliver-by").value) body.deliver_by = $("deliver-by").value;
+  if (options.temperature) body.temperature_range = $("temp-range").value;
   $("quote-btn").disabled = true;
   try {
     const q = await api("/api/quote", body);
