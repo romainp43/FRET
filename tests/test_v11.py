@@ -159,3 +159,48 @@ class SendQuote(unittest.TestCase):
             self.assertEqual(last, 429)
         finally:
             httpd.shutdown()
+
+
+class Outcomes(unittest.TestCase):
+    def test_report_small_sample_is_indicative(self):
+        from fretrau import outcomes
+        rows = [{"customer_price_ht": 1000, "actual_cost_ht": 850, "carrier_price": 800, "on_time": 1, "carrier_id": 1, "carrier_name": "A"},
+                {"customer_price_ht": 900, "actual_cost_ht": 880, "carrier_price": 800, "on_time": 0, "carrier_id": 1, "carrier_name": "A"}]
+        r = outcomes.report(rows)
+        self.assertTrue(r["indicative_only"])
+        self.assertEqual(r["realized_margin_ht"], 170.0)
+        self.assertEqual(r["on_time_rate"], 0.5)
+        self.assertEqual(r["cost_vs_negotiated_pct"], 8.1)
+        self.assertEqual(outcomes.report([])["count"], 0)
+
+    def test_route_disk_cache_roundtrip(self):
+        import tempfile
+        from fretrau import routing
+        with tempfile.TemporaryDirectory() as d:
+            routing.CACHE_FILE = os.path.join(d, "r.json")
+            routing._cache.clear()
+            routing._cache[("A", "B")] = (123.4, "osrm")
+            routing._cache[("C", "D")] = (50.0, "estimation")
+            routing._save_disk()
+            routing._cache.clear()
+            routing._load_disk()
+            self.assertEqual(routing._cache, {("A", "B"): (123.4, "osrm")})
+            routing._cache.clear()
+
+    def test_db_outcome_roundtrip(self):
+        os.environ.setdefault("FRETRAU_DB", ":memory:")
+        from fretrau.db import DB
+        from fretrau import outcomes
+        db = DB(":memory:")
+        db.save_booking(tracking_code="FR-AAAAAAAAAAAA", quote_id="q", status="confirmed",
+                        customer={"name": "T", "company": "T", "email": "t@t.fr", "phone": "0600000000"},
+                        shipment={"origin": "Lyon", "destination": "Paris", "mode": "FTL"},
+                        customer_price_ht=1000.0, agent_log={}, carrier_id=1, carrier_name="Rhône Fret", carrier_price=800.0)
+        b = db.booking_by_code("FR-AAAAAAAAAAAA")
+        db.record_outcome(b["id"], 820.0, True, "RAS", "admin")
+        db.record_outcome(b["id"], 830.0, False, "retard 2 h", "admin")       # correction : remplace, pas de doublon
+        rows = db.list_outcomes()
+        self.assertEqual(len(rows), 1)
+        r = outcomes.report(rows)
+        self.assertEqual(r["realized_margin_ht"], 170.0)
+        self.assertEqual(r["on_time_rate"], 0.0)

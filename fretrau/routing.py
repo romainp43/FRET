@@ -13,6 +13,33 @@ from . import geo
 
 _cache = {}
 _lock = threading.Lock()
+CACHE_FILE = os.environ.get("FRETRAU_ROUTE_CACHE", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "routes_osrm.json"))
+
+
+def _load_disk():
+    """Distances OSRM déjà obtenues (une ligne par couple de villes) : évite de rappeler le service à chaque démarrage."""
+    try:
+        with open(CACHE_FILE, encoding="utf-8") as f:
+            for k, v in json.load(f).items():
+                a, b = k.split("|")
+                _cache[(a, b)] = (float(v), "osrm")
+    except (OSError, ValueError, TypeError):
+        pass
+
+
+def _save_disk():
+    try:
+        os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+        data = {"|".join(k): v[0] for k, v in _cache.items() if v[1] == "osrm"}
+        tmp = CACHE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.replace(tmp, CACHE_FILE)
+    except OSError:
+        pass
+
+
+_load_disk()
 
 
 def _osrm(a: str, b: str):
@@ -42,4 +69,6 @@ def distance(a: str, b: str):
     res = (km, "osrm") if km is not None else (geo.road_km(a, b), "estimation")
     with _lock:
         _cache[key] = res
+        if res[1] == "osrm":
+            _save_disk()
     return res

@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from fretrau import booking, chaining, claims, driver, geo, vetting, invoicing, mailer, payments, places, pricing, security, sms, watch_run
+from fretrau import booking, outcomes, chaining, claims, driver, geo, vetting, invoicing, mailer, payments, places, pricing, security, sms, watch_run
 from fretrau.agents import claims_triage, guard, rfq
 from fretrau.agents import email_agent, intake, ratematch, llm
 from fretrau.db import DB
@@ -160,8 +160,8 @@ class Handler(BaseHTTPRequestHandler):
 
     PERMS = {  # rôle -> préfixes/points d'accès autorisés
         "admin": None,
-        "ops": ("bookings", "booking", "outbox", "stats", "me", "pod", "carriers", "contacts", "claims", "chaining", "watchtower", "driver-link", "sms", "directory", "rfq"),
-        "finance": ("bookings", "invoice", "stats", "me", "payables"),
+        "ops": ("bookings", "booking", "outbox", "stats", "me", "pod", "carriers", "contacts", "claims", "chaining", "watchtower", "driver-link", "sms", "directory", "rfq", "outcome", "outcomes"),
+        "finance": ("bookings", "invoice", "stats", "me", "payables", "outcomes"),
     }
 
     def allow(self, role, resource):
@@ -990,6 +990,22 @@ class Handler(BaseHTTPRequestHandler):
             if not seen & {"loaded", "in_transit", "arrived"}:
                 raise ApiError(409, "Aucun jalon de transport enregistré : impossible de confirmer la livraison.")
             return self.send_json(200, {"result": self.record_event(b, "delivered", f"operator:{who}", "preuve de livraison validée")})
+        if method == "POST" and path == "/api/admin/outcome":
+            d = self.read_json()
+            code = str(d.get("tracking_code", ""))
+            b = DB_.booking_by_code(code) if security.CODE_RE.match(code) else None
+            cost = d.get("actual_cost_ht")
+            if not b or b["status"] != "confirmed":
+                raise ApiError(404, "Réservation confirmée introuvable.")
+            if isinstance(cost, bool) or not isinstance(cost, (int, float)) or not 0 < cost < 100000:
+                raise ApiError(422, "Coût réel HT invalide.")
+            if not isinstance(d.get("on_time"), bool):
+                raise ApiError(422, "Indiquez si la livraison était à l'heure (true/false).")
+            DB_.record_outcome(b["id"], cost, d["on_time"], security.clean_text(d.get("note"), 300), who)
+            DB_.audit(who, "outcome", f"{code} coût {cost}")
+            return self.send_json(200, {"ok": True})
+        if method == "GET" and path == "/api/admin/outcomes":
+            return self.send_json(200, outcomes.report(DB_.list_outcomes()))
         if method == "GET" and path == "/api/admin/payables":
             rows = DB_.list_payables()
             return self.send_json(200, {"payables": rows, "total_due_ht": round(sum(r["amount_ht"] for r in rows if r["status"] == "due"), 2)})

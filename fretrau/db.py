@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS bookings (
     carrier_id INTEGER, carrier_name TEXT, carrier_price REAL,
     customer_price_ht REAL NOT NULL, agent_log TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS outcomes (
+    booking_id INTEGER PRIMARY KEY, actual_cost_ht REAL NOT NULL, on_time INTEGER NOT NULL,
+    note TEXT, recorded_by TEXT NOT NULL, created_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, actor TEXT NOT NULL,
     action TEXT NOT NULL, detail TEXT, prev_hash TEXT NOT NULL, hash TEXT NOT NULL
@@ -226,6 +230,16 @@ class DB:
 
     def events_for(self, booking_id):
         return self._all("SELECT ts, kind, source, detail FROM events WHERE booking_id=? ORDER BY id", (booking_id,))
+
+    # ---- résultats réels (boucle d'apprentissage) ----
+    def record_outcome(self, booking_id, actual_cost_ht, on_time, note, who):
+        """Un seul résultat par réservation (INSERT OR REPLACE : une correction remplace la saisie précédente)."""
+        self._exec("INSERT OR REPLACE INTO outcomes(booking_id, actual_cost_ht, on_time, note, recorded_by, created_at) VALUES (?,?,?,?,?,?)",
+                   (booking_id, float(actual_cost_ht), 1 if on_time else 0, (note or "")[:300], who, time.time()))
+
+    def list_outcomes(self):
+        return self._all("""SELECT o.booking_id, o.actual_cost_ht, o.on_time, o.note, b.tracking_code, b.carrier_id, b.carrier_name,
+                            b.carrier_price, b.customer_price_ht FROM outcomes o JOIN bookings b ON b.id=o.booking_id""")
 
     # ---- paiement transporteur (déclenché par la preuve de livraison) ----
     def create_payable(self, booking, pod_at, due_on):
