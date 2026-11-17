@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /admin.html
+Disallow: /api/
+Disallow: /chauffeur.html

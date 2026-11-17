@@ -6,6 +6,7 @@ const eur = (n) => new Intl.NumberFormat("fr-FR", { style: "currency", currency:
 const LABELS = {
   transport_base: "Transport", supplement_international: "Supplément international", adr: "Matières dangereuses (ADR)",
   temperature: "Température dirigée", express: "Express", gazole: "Indexation gazole", hayon: "Hayon élévateur",
+  indexation_gazole: "Indexation gazole", plateau: "Plateau", rendez_vous: "Livraison sur rendez-vous", particulier: "Livraison chez un particulier",
 };
 let lastQuote = null;
 
@@ -93,12 +94,27 @@ $("quote-form").addEventListener("submit", async (e) => {
   finally { $("quote-btn").disabled = false; }
 });
 
+function altBlock(q) {
+  const alts = q.alternatives || [];
+  if (!alts.length) return [];
+  const a = alts[0];
+  const sign = a.delta_ht >= 0 ? "+" : "−";
+  const btn = el("button", { type: "button", class: "alt-btn" }, `Voir la formule ${a.label}`);
+  btn.addEventListener("click", async () => {
+    try { const nq = await api("/api/quote/" + a.quote_id); lastQuote = nq; renderQuote(nq, {}); }
+    catch (e) { showError("quote-error", "Cette formule a expiré : refaites une demande."); }
+  });
+  return [el("div", { class: "alt" },
+    el("span", {}, `Formule ${a.label} : ${eur(a.price_ht)} HT (${sign}${eur(Math.abs(a.delta_ht))}) · livraison sous ${a.transit_days} jour(s)`), btn)];
+}
+
 function renderQuote(q, body) {
   const box = $("result");
   box.replaceChildren(
     el("h2", {}, `${q.origin || body.origin} → ${q.destination || body.destination}`),
     el("p", { class: "muted" }, `${q.mode === "FTL" ? "Camion complet" : "Palettes"} · ${q.distance_km} km · livraison estimée sous ${q.transit_days} jour(s)`),
     el("div", { class: "price" }, eur(q.price_ht), el("small", {}, " HT")),
+    ...altBlock(q),
     el("p", { class: "muted" }, q.vat > 0 ? `${eur(q.price_ttc)} TTC (TVA 20 %)` : "Transport international : TVA selon régime applicable (autoliquidation possible)."),
     el("table", { class: "lines" }, ...Object.entries(q.breakdown).map(([k, v]) => el("tr", {}, el("td", {}, LABELS[k] || k), el("td", {}, eur(v))))),
     q.earliest_delivery ? el("p", { class: "muted" }, `Livraison au plus tôt le ${q.earliest_delivery}.`) : "",

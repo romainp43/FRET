@@ -197,6 +197,10 @@ class Handler(BaseHTTPRequestHandler):
         full = os.path.realpath(os.path.join(WEB, path.lstrip("/")))
         ext = os.path.splitext(full)[1].lower()
         if not full.startswith(WEB + os.sep) or ext not in MIME or not os.path.isfile(full):
+            page = os.path.join(WEB, "404.html")
+            if os.path.isfile(page) and "text/html" in (self.headers.get("Accept") or ""):
+                with open(page, "rb") as f:
+                    return self.send_bytes(404, MIME[".html"], f.read())
             raise ApiError(404, "Introuvable.")
         with open(full, "rb") as f:
             self.send_bytes(200, MIME[ext], f.read())
@@ -519,7 +523,32 @@ class Handler(BaseHTTPRequestHandler):
         shipment = {"pallets": q.pallets, "weight_kg": weight, "pickup_date": pickup.isoformat(),
                     "deliver_by": deliver_by.isoformat() if deliver_by else None, "options": q.options}
         DB_.save_quote(quote_id, {"quote": asdict(q), "shipment": shipment})
-        self.send_json(200, self.quote_view(quote_id, asdict(q)))
+        view = self.quote_view(quote_id, asdict(q))
+        view["alternatives"] = self.quote_alternatives(origin, destination, mode, pallets, weight, options,
+                                                       pickup, deliver_by, q, view)
+        self.send_json(200, view)
+
+    @staticmethod
+    def quote_alternatives(origin, destination, mode, pallets, weight, options, pickup, deliver_by, q, view):
+        """Formule inverse (Express si Standard demandé, et inversement), calculée par la même grille.
+        Ce ne sont pas des offres de transporteurs distincts : le prix reste calculé par FRETRAU."""
+        want_urgent = not bool(options.get("urgent"))
+        alt_options = dict(options)
+        alt_options["urgent"] = want_urgent
+        try:
+            alt = pricing.build_quote(origin, destination, mode, pallets, weight, alt_options, pickup, deliver_by)
+        except (pricing.QuoteError, places.PlaceError, ValueError):
+            return []
+        if alt.price_ht == q.price_ht and alt.transit_days == q.transit_days:
+            return []
+        alt_id = secrets.token_urlsafe(12)
+        DB_.save_quote(alt_id, {"quote": asdict(alt), "shipment": {
+            "pallets": alt.pallets, "weight_kg": weight, "pickup_date": pickup.isoformat(),
+            "deliver_by": deliver_by.isoformat() if deliver_by else None, "options": alt.options}})
+        return [{"quote_id": alt_id, "label": "Express" if want_urgent else "Standard",
+                 "price_ht": alt.price_ht, "transit_days": alt.transit_days,
+                 "earliest_delivery": alt.earliest_delivery,
+                 "delta_ht": round(alt.price_ht - q.price_ht, 2)}]
 
     @staticmethod
     def quote_view(quote_id, q):

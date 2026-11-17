@@ -83,6 +83,14 @@
     "flatbed": {
       "pct": 0.15,
       "confidence": "low"
+    },
+    "appointment": {
+      "eur": 20.0,
+      "confidence": "low"
+    },
+    "residential": {
+      "eur": 35.0,
+      "confidence": "low"
     }
   },
   "fuel": {

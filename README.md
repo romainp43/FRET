@@ -144,3 +144,8 @@ Le référentiel complet n'est PAS dans le ZIP (fichier volumineux, licences à 
 3. « Préparer une demande » à partir d'un devis : l'agent choisit les plus proches, rédige une demande anonyme ; vous cliquez « Envoyer ».
 4. Branchez les réponses : même passerelle que l'agent e-mail, vers `/api/webhook/rfq-reply` (JSON signé `{from_email, text}`).
 5. Les prix reçus s'affichent avec le meilleur prix ; au-delà de 20 réponses chiffrées, le rapport prix réel / estimation sert à recaler `config/tariff.json`.
+
+## v12 — Formules Standard/Express, options de livraison, détails
+- Le devis propose la formule inverse (Express ou Standard), calculée par la même grille. Ce ne sont pas des offres de transporteurs distincts.
+- Nouvelles options : livraison sur rendez-vous (20 €) et chez un particulier (35 €). Ces deux montants sont des estimations de départ à confirmer auprès de vrais transporteurs.
+- Logo, favicon, illustration de camion, page 404, robots.txt.

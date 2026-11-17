@@ -137,3 +137,6 @@ ul.included { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 
 ul.included li::before { content: "✓ "; color: var(--ok, #1a7f4b); font-weight: 700; }
 
 .hero-truck { display: block; width: 100%; max-width: 520px; height: auto; margin: 18px 0 6px; }
+.alt { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; background: #fff4ee; border: 1px solid #ffd9c4; border-radius: 10px; padding: 10px 12px; margin: 8px 0; font-size: 14px; }
+.alt-btn { background: #fff; color: var(--accent-d); border: 2px solid var(--accent); padding: 7px 12px; }
+.alt-btn:hover { background: var(--accent); color: #fff; }

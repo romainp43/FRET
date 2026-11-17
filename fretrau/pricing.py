@@ -22,6 +22,8 @@ OPTIONS = {
     "temperature": "Température dirigée",
     "urgent": "Express (livraison la plus rapide)",
     "flatbed": "Plateau / semi-remorque non bâchée (camion complet)",
+    "appointment": "Livraison sur rendez-vous",
+    "residential": "Livraison chez un particulier",
 }
 ALPINE = {"IT", "CH"}
 
@@ -116,6 +118,10 @@ def estimate_cost(mode, origin, destination, pallets, weight_kg, options, t=None
     if options.get("tail_lift"):
         lines["hayon"] = o["tail_lift"]["eur"]
         subtotal += lines["hayon"]
+    for key, label in (("appointment", "rendez_vous"), ("residential", "particulier")):
+        if options.get(key):
+            lines[label] = o[key]["eur"]
+            subtotal += lines[label]
 
     u = t["uncertainty"]
     international = geo.country(origin) != geo.country(destination)
