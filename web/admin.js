@@ -141,7 +141,14 @@ function actions(buttons) {
 async function loadLeads() {
   const [apps, claims, contacts, chain] = await Promise.all([
     optional("/api/admin/carriers"), optional("/api/admin/claims"), optional("/api/admin/contacts"), optional("/api/admin/chaining")]);
-  $("leads-box").classList.toggle("hidden", !(apps || claims || contacts || chain));
+  const rfqs = await optional("/api/admin/rfq");
+  $("leads-box").classList.toggle("hidden", !(apps || claims || contacts || chain || rfqs));
+  if (rfqs) {
+    const c = rfqs.calibration;
+    $("rfq-list").replaceChildren(
+      el("p", { class: "muted small" }, c.n ? `Prix réels reçus : ${c.n} (rapport médian prix réel / estimation : ${c.median_ratio}). ${c.reliable ? "" : c.note}` : "Aucune réponse chiffrée pour l'instant."),
+      ...rfqs.rfqs.map((r) => el("p", {}, `${r.ref} — ${r.lane.origin} → ${r.lane.destination} : ${r.targets} sollicités, ${r.replies.length} réponse(s), meilleur prix ${eur(r.best)} (estimation du modèle ${eur(r.estimate_eur)}) — ${r.status === "draft" ? "brouillon" : "envoyée"}`)));
+  }
   const empty = (t) => el("p", { class: "muted" }, t);
   if (apps) {
     $("applications").replaceChildren(...(apps.applications.length ? apps.applications.map((a) => {
@@ -178,3 +185,19 @@ async function loadLeads() {
       : [empty("Aucun enchaînement détecté entre les réservations confirmées.")]));
   }
 }
+
+$("rfq-draft").addEventListener("click", async () => {
+  try {
+    const d = await api("/api/admin/rfq/draft", { quote_id: $("rfq-quote").value.trim() });
+    const box = $("rfq-preview");
+    box.replaceChildren(el("h3", {}, `Demande ${d.ref} : ${d.targets.length} transporteur(s) sélectionné(s)`),
+      el("p", { class: "muted small" }, d.targets.map((t) => `${t.name} (${t.city}, ${t.distance_km} km)`).join(" ; ") || "Aucun transporteur contactable : ajoutez des e-mails dans l'annuaire."),
+      el("pre", {}, `${d.subject}\n\n${d.body}`),
+      el("p", { class: "muted small" }, `${d.skipped.length} écarté(s) : ${d.skipped.slice(0, 8).map((s) => s.reason).join(" ; ")}`));
+    if (d.targets.length) {
+      const b = el("button", { type: "button" }, "Envoyer cette demande");
+      b.addEventListener("click", async () => { b.disabled = true; try { const r = await api("/api/admin/rfq/send", { id: d.id }); box.replaceChildren(el("p", { class: "ok-box" }, `${r.sent} demande(s) envoyée(s).`)); loadLeads(); } catch (e) { box.append(el("div", { class: "err" }, e.message)); b.disabled = false; } });
+      box.append(b);
+    }
+  } catch (e) { $("rfq-preview").replaceChildren(el("div", { class: "err" }, e.message)); }
+});

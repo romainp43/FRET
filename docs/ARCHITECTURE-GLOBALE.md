@@ -51,6 +51,9 @@ Source de comparaison : les onglets et fonctions visibles sur linklane.ai (pages
 | Facture à 14 jours (clients avec crédit) | `invoicing.py` | ✅ |
 | Paiement transporteur à échéance | `payables` | ✅ |
 | Vérification SIREN/TVA officielle | `verify_remote.py` (annuaire des entreprises, VIES) | 📐 jamais exécuté en ligne ici |
+| Annuaire des transporteurs réels d'une zone (Sirene, NAF 49.41A/B) | `directory.py`, `tools/import_carriers.py` | 📐 logique testée avec un faux service ; l'import réel exige Internet et n'a pas été lancé ici. Pas d'e-mail ni de prix dans la source : à compléter |
+| Demande de devis aux transporteurs, lecture des réponses, comparaison | agent `rfq`, `/api/admin/rfq/*`, `/api/webhook/rfq-reply` | ✅ testé de bout en bout (envoi sur validation humaine, STOP, anti-doublon) ; 📐 réception réelle des e-mails à brancher (même passerelle que l'agent e-mail) |
+| Recalage du barème sur les prix réels reçus | `/api/admin/rfq` → calibration | ✅ calcul ; jugé « fiable » seulement à partir de 20 réponses chiffrées |
 | Administration (rôles, 2FA TOTP, audit chaîné) | `server.py`, `admin.html` | ✅ |
 | Sauvegardes, rétention RGPD, anonymisation | `tools/backup.py`, `tools/maintenance.py` | ✅ |
 | Télématique (position GPS du camion automatique) | — | ⛔ nécessite des contrats avec transporteurs/fournisseurs de télématique ; remplacée par le lien chauffeur |

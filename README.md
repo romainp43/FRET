@@ -137,3 +137,10 @@ Le référentiel complet n'est PAS dans le ZIP (fichier volumineux, licences à 
 - Nouveaux agents : `guard` (anti-fraude), `watchtower` (veille retards, `/api/admin/watchtower`), `claims_triage`.
 - Modules théoriques (désactivés sans configuration) : SMS (`FRETRAU_SMS_PROVIDER`/`FRETRAU_SMS_URL`), paiement Stripe (`FRETRAU_STRIPE_KEY`, `FRETRAU_STRIPE_WEBHOOK_SECRET`), vérifications officielles SIREN/TVA.
 - Nouvelles pages : suivi, espace client, partage de position chauffeur, estimation lot partiel/combiné, choix de confidentialité.
+
+### Transporteurs réels et demandes de devis
+1. `python3 tools/import_carriers.py 43 42 69 07` (Internet requis) : recense les transporteurs de fret actifs des départements donnés.
+2. Dans l'administration, complétez l'e-mail des transporteurs que vous voulez solliciter.
+3. « Préparer une demande » à partir d'un devis : l'agent choisit les plus proches, rédige une demande anonyme ; vous cliquez « Envoyer ».
+4. Branchez les réponses : même passerelle que l'agent e-mail, vers `/api/webhook/rfq-reply` (JSON signé `{from_email, text}`).
+5. Les prix reçus s'affichent avec le meilleur prix ; au-delà de 20 réponses chiffrées, le rapport prix réel / estimation sert à recaler `config/tariff.json`.

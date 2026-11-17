@@ -12,6 +12,7 @@ import json
 import os
 import re
 import secrets
+import statistics
 import time
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
@@ -19,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from fretrau import booking, chaining, claims, driver, geo, vetting, invoicing, mailer, payments, places, pricing, security, sms, watch_run
-from fretrau.agents import claims_triage, guard
+from fretrau.agents import claims_triage, guard, rfq
 from fretrau.agents import email_agent, intake, ratematch, llm
 from fretrau.db import DB
 
@@ -154,7 +155,7 @@ class Handler(BaseHTTPRequestHandler):
 
     PERMS = {  # rôle -> préfixes/points d'accès autorisés
         "admin": None,
-        "ops": ("bookings", "booking", "outbox", "stats", "me", "pod", "carriers", "contacts", "claims", "chaining", "watchtower", "driver-link", "sms"),
+        "ops": ("bookings", "booking", "outbox", "stats", "me", "pod", "carriers", "contacts", "claims", "chaining", "watchtower", "driver-link", "sms", "directory", "rfq"),
         "finance": ("bookings", "invoice", "stats", "me", "payables"),
     }
 
@@ -231,6 +232,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.api_carrier_status()
         if method == "POST" and path == "/api/webhook/inbound-mail":
             return self.api_inbound_mail()
+        if method == "POST" and path == "/api/webhook/rfq-reply":
+            return self.api_rfq_reply()
         if method == "POST" and path == "/api/carrier/apply":
             return self.api_carrier_apply()
         if method == "POST" and path == "/api/contact":
@@ -800,6 +803,27 @@ class Handler(BaseHTTPRequestHandler):
                 pass
         self.send_json(200, result)
 
+    def api_rfq_reply(self):
+        """Réponse e-mail d'un transporteur à une demande de devis (relayée par votre messagerie, signature HMAC obligatoire)."""
+        d = self.verify_signed()
+        text, sender = d.get("text"), str(d.get("from_email", "")).strip().lower()
+        if not isinstance(text, str) or len(text) > 5000 or not security.EMAIL_RE.match(sender):
+            raise ApiError(422, "Données invalides.")
+        ref, amount, stop = rfq.read_reply(text)
+        if stop:
+            DB_.optout_by_email(sender)
+            DB_.audit("rfq_agent", "rfq_optout", "")
+            return self.send_json(200, {"decision": "optout"})
+        r = DB_.rfq_by_ref(ref) if ref else None
+        if not r:
+            return self.send_json(200, {"decision": "ignored", "reason": "Référence de demande inconnue."})
+        siren = next((t["siren"] for t in DB_.rfq_targets(r["id"]) if (t["email"] or "").lower() == sender), None)
+        if not siren:
+            return self.send_json(200, {"decision": "ignored", "reason": "Expéditeur non sollicité pour cette demande."})
+        DB_.add_rfq_reply(r["id"], siren, amount, text)
+        DB_.audit("rfq_agent", "rfq_reply", f"{ref} siren={siren} amount={amount}")
+        return self.send_json(200, {"decision": "recorded", "amount": amount})
+
     # ---------- admin ----------
     def api_admin(self, method, path):
         if method == "POST" and path == "/api/admin/login":
@@ -971,6 +995,69 @@ class Handler(BaseHTTPRequestHandler):
                 items.append({"code": r["tracking_code"], "origin": sh["origin"], "destination": sh["destination"], "mode": sh["mode"],
                               "pickup_date": sh["pickup_date"], "earliest_delivery": q.get("earliest_delivery", "")})
             return self.send_json(200, {"suggestions": chaining.suggestions(items)})
+        if method == "GET" and path == "/api/admin/directory":
+            q = parse_qs(urlparse(self.path).query)
+            return self.send_json(200, {"carriers": DB_.list_directory((q.get("dept") or [None])[0])})
+        if method == "POST" and path == "/api/admin/directory/contact":
+            d = self.read_json()
+            email = security.clean_text(d.get("email"), 254)
+            phone = security.clean_text(d.get("phone"), 20) if d.get("phone") else ""
+            if not security.EMAIL_RE.match(email) or (phone and not security.PHONE_RE.match(phone)) or not DB_.set_directory_contact(str(d.get("siren", ""))[:9], email, phone):
+                raise ApiError(422, "Requête invalide.")
+            DB_.audit(who, "directory_contact", str(d.get("siren")))
+            return self.send_json(200, {"ok": True})
+        if method == "POST" and path == "/api/admin/rfq/draft":
+            d = self.read_json()
+            stored = DB_.get_quote(str(d.get("quote_id", ""))[:40], max_age_s=None)
+            if not stored:
+                raise ApiError(404, "Devis introuvable.")
+            qt, sh = stored["quote"], stored["shipment"]
+            lane = {"origin": qt["origin"], "destination": qt["destination"], "pickup_date": sh["pickup_date"], "pallets": sh.get("pallets"),
+                    "weight_kg": sh.get("weight_kg"), "mode": qt["mode"], "options": sh.get("options") or {}}
+            try:
+                _, lat, lon = geo.coords(qt["origin"])
+            except KeyError:
+                raise ApiError(422, "Lieu de départ inconnu.")
+            radius = d.get("radius_km") if isinstance(d.get("radius_km"), (int, float)) and not isinstance(d.get("radius_km"), bool) and 10 <= d["radius_km"] <= 500 else rfq.DEFAULT_RADIUS_KM
+            targets, skipped = rfq.select(DB_.list_directory(limit=100000), lat, lon, time.time(), radius)
+            ref = rfq.new_ref()
+            rid = DB_.create_rfq(ref, d["quote_id"], json.dumps(lane), qt.get("carrier_cost_estimate"), [t["siren"] for t in targets])
+            subject, body = rfq.draft(ref, lane, OPS_EMAIL or "contact")
+            DB_.audit(who, "rfq_draft", f"{ref} targets={len(targets)}")
+            return self.send_json(200, {"id": rid, "ref": ref, "subject": subject, "body": body, "targets": [{"siren": t["siren"], "name": t["name"], "city": t["city"], "distance_km": t["distance_km"]} for t in targets], "skipped": skipped[:50]})
+        if method == "POST" and path == "/api/admin/rfq/send":
+            d = self.read_json()
+            r = DB_.rfq_by_id(d["id"]) if isinstance(d.get("id"), int) and not isinstance(d.get("id"), bool) else None
+            if not r or r["status"] != "draft":
+                raise ApiError(404, "Demande introuvable ou déjà envoyée.")
+            lane = json.loads(r["lane"])
+            subject, body = rfq.draft(r["ref"], lane, OPS_EMAIL or "contact")
+            sent = 0
+            for t in DB_.rfq_targets(r["id"]):
+                c = DB_.directory_one(t["siren"])
+                if c and c["email"] and not c["optout"]:           # re-contrôle au moment de l'envoi
+                    mailer.queue(DB_, c["email"], subject, body)
+                    DB_.mark_rfq_sent(r["id"], t["siren"])
+                    sent += 1
+            try:
+                mailer.flush(DB_)
+            except Exception:
+                pass
+            DB_.audit(who, "rfq_send", f"{r['ref']} sent={sent}")
+            return self.send_json(200, {"sent": sent})
+        if method == "GET" and path == "/api/admin/rfq":
+            out = []
+            for r in DB_.list_rfqs():
+                reps = DB_.rfq_replies(r["id"])
+                priced = [x for x in reps if x["amount"] is not None]
+                out.append({"id": r["id"], "ref": r["ref"], "status": r["status"], "lane": json.loads(r["lane"]), "estimate_eur": r["estimate_eur"],
+                            "targets": len(DB_.rfq_targets(r["id"])), "replies": [{"name": x["name"], "amount": x["amount"]} for x in reps],
+                            "best": min((x["amount"] for x in priced), default=None)})
+            ratios = DB_.rfq_price_ratios()
+            cal = {"n": len(ratios), "median_ratio": round(statistics.median(ratios), 3) if ratios else None,
+                   "reliable": len(ratios) >= 20,
+                   "note": "Rapport prix réels / estimation. Moins de 20 réponses chiffrées : indicatif seulement, ne recalez pas le barème."}
+            return self.send_json(200, {"rfqs": out, "calibration": cal})
         if method == "GET" and path == "/api/admin/stats":
             rows = DB_.list_bookings(10000)
             done = [r for r in rows if r["status"] == "confirmed"]

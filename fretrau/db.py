@@ -83,6 +83,20 @@ CREATE TABLE IF NOT EXISTS payments (
     id INTEGER PRIMARY KEY AUTOINCREMENT, quote_id TEXT NOT NULL, booking_code TEXT, provider TEXT NOT NULL, provider_ref TEXT,
     amount_cents INTEGER NOT NULL, currency TEXT NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS carrier_directory (
+    siren TEXT PRIMARY KEY, name TEXT NOT NULL, city TEXT, postcode TEXT, dept TEXT, lat REAL, lon REAL, naf TEXT, size TEXT,
+    email TEXT, phone TEXT, status TEXT NOT NULL DEFAULT 'prospect', optout INTEGER NOT NULL DEFAULT 0, last_contacted REAL, updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS rfq (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT NOT NULL UNIQUE, quote_id TEXT, created_at REAL NOT NULL, lane TEXT NOT NULL,
+    estimate_eur REAL, status TEXT NOT NULL DEFAULT 'draft'
+);
+CREATE TABLE IF NOT EXISTS rfq_targets (
+    rfq_id INTEGER NOT NULL, siren TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', sent_at REAL, PRIMARY KEY (rfq_id, siren)
+);
+CREATE TABLE IF NOT EXISTS rfq_replies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, rfq_id INTEGER NOT NULL, siren TEXT, amount REAL, raw TEXT NOT NULL, received_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS inbound (
     id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER NOT NULL, carrier_id INTEGER,
     received_at REAL NOT NULL, raw TEXT NOT NULL, parsed_amount REAL, decision TEXT NOT NULL
@@ -355,6 +369,82 @@ class DB:
             c = json.loads(r["customer"])
             out.append({"email": (c.get("email") or "").lower(), "ip_hash": (c.get("consent") or {}).get("ip_hash", ""), "created_at": r["created_at"]})
         return out
+
+    # ---- annuaire des transporteurs et demandes de devis ----
+    def upsert_directory(self, row):
+        """Ajoute ou met à jour (sans écraser e-mail, téléphone, statut, désinscription). Retourne 1 si nouvelle ligne."""
+        with _lock:
+            exists = self.conn.execute("SELECT 1 FROM carrier_directory WHERE siren=?", (row["siren"],)).fetchone()
+            if exists:
+                self.conn.execute("UPDATE carrier_directory SET name=?, city=?, postcode=?, dept=?, lat=?, lon=?, naf=?, size=?, updated_at=? WHERE siren=?",
+                                  (row["name"], row["city"], row["postcode"], row["dept"], row["lat"], row["lon"], row["naf"], row["size"], time.time(), row["siren"]))
+            else:
+                self.conn.execute("INSERT INTO carrier_directory (siren,name,city,postcode,dept,lat,lon,naf,size,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                  (row["siren"], row["name"], row["city"], row["postcode"], row["dept"], row["lat"], row["lon"], row["naf"], row["size"], time.time()))
+            self.conn.commit()
+        return 0 if exists else 1
+
+    def list_directory(self, dept=None, limit=500):
+        if dept:
+            return self._all("SELECT * FROM carrier_directory WHERE dept=? ORDER BY name LIMIT ?", (dept, limit))
+        return self._all("SELECT * FROM carrier_directory ORDER BY name LIMIT ?", (limit,))
+
+    def directory_one(self, siren):
+        r = self._all("SELECT * FROM carrier_directory WHERE siren=?", (siren,))
+        return r[0] if r else None
+
+    def set_directory_contact(self, siren, email, phone):
+        return self._exec("UPDATE carrier_directory SET email=?, phone=?, updated_at=? WHERE siren=?", (email, phone, time.time(), siren)).rowcount == 1
+
+    def set_directory_optout(self, siren):
+        self._exec("UPDATE carrier_directory SET optout=1, updated_at=? WHERE siren=?", (time.time(), siren))
+
+    def optout_by_email(self, email):
+        self._exec("UPDATE carrier_directory SET optout=1, updated_at=? WHERE lower(email)=?", (time.time(), email.lower()))
+
+    def create_rfq(self, ref, quote_id, lane_json, estimate, sirens):
+        with _lock:
+            cur = self.conn.execute("INSERT INTO rfq (ref, quote_id, created_at, lane, estimate_eur) VALUES (?,?,?,?,?)", (ref, quote_id, time.time(), lane_json, estimate))
+            rid = cur.lastrowid
+            for sr in sirens:
+                self.conn.execute("INSERT OR IGNORE INTO rfq_targets (rfq_id, siren) VALUES (?,?)", (rid, sr))
+            self.conn.commit()
+        return rid
+
+    def rfq_by_id(self, rid):
+        r = self._all("SELECT * FROM rfq WHERE id=?", (rid,))
+        return r[0] if r else None
+
+    def rfq_by_ref(self, ref):
+        r = self._all("SELECT * FROM rfq WHERE ref=?", (ref,))
+        return r[0] if r else None
+
+    def rfq_targets(self, rid):
+        return self._all("SELECT t.*, d.name, d.email, d.city FROM rfq_targets t JOIN carrier_directory d ON d.siren=t.siren WHERE t.rfq_id=?", (rid,))
+
+    def mark_rfq_sent(self, rid, siren):
+        now = time.time()
+        with _lock:
+            self.conn.execute("UPDATE rfq_targets SET status='sent', sent_at=? WHERE rfq_id=? AND siren=?", (now, rid, siren))
+            self.conn.execute("UPDATE carrier_directory SET last_contacted=? WHERE siren=?", (now, siren))
+            self.conn.execute("UPDATE rfq SET status='sent' WHERE id=?", (rid,))
+            self.conn.commit()
+
+    def add_rfq_reply(self, rid, siren, amount, raw):
+        self._exec("INSERT INTO rfq_replies (rfq_id, siren, amount, raw, received_at) VALUES (?,?,?,?,?)", (rid, siren, amount, raw[:2000], time.time()))
+        if siren:
+            self._exec("UPDATE rfq_targets SET status='replied' WHERE rfq_id=? AND siren=?", (rid, siren))
+
+    def rfq_replies(self, rid):
+        return self._all("SELECT r.*, d.name FROM rfq_replies r LEFT JOIN carrier_directory d ON d.siren=r.siren WHERE r.rfq_id=? ORDER BY r.amount IS NULL, r.amount", (rid,))
+
+    def list_rfqs(self, limit=50):
+        return self._all("SELECT * FROM rfq ORDER BY id DESC LIMIT ?", (limit,))
+
+    def rfq_price_ratios(self):
+        """(montant de réponse / estimation du modèle) pour chaque réponse chiffrée : sert à recaler le barème sur des prix réels."""
+        return [r["amount"] / r["estimate_eur"] for r in self._all(
+            "SELECT p.amount, q.estimate_eur FROM rfq_replies p JOIN rfq q ON q.id=p.rfq_id WHERE p.amount IS NOT NULL AND q.estimate_eur > 0")]
 
     # ---- compte client (code par e-mail) ----
     def set_login_code(self, email, code_hash, expires_at):

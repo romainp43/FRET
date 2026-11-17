@@ -35,10 +35,14 @@ Aucune donnée réelle de transport n'existe encore : il n'y a ni historique de 
 
 ## Agents utilisés
 
-Conformité (`compliance`), sourcing, négociation, décision, risque (`risk`), second avis de coût (`costcheck`), saisie e-mail (`intake`), alignement de prix (`ratematch`), agent e-mail (`email_agent`), rédaction optionnelle (`llm`), garde anti-fraude (`guard`), veille (`watchtower`), triage des réclamations (`claims_triage`). Les contrôles de candidature transporteur (`vetting`, `verify_remote`) sont des règles, pas des agents.
+Conformité (`compliance`), sourcing, négociation, décision, risque (`risk`), second avis de coût (`costcheck`), saisie e-mail (`intake`), alignement de prix (`ratematch`), agent e-mail (`email_agent`), rédaction optionnelle (`llm`), demande de devis (`rfq`), garde anti-fraude (`guard`), veille (`watchtower`), triage des réclamations (`claims_triage`). Les contrôles de candidature transporteur (`vetting`, `verify_remote`) sont des règles, pas des agents.
 
 ## Relancer
 
     python3 tools/train_agents.py     # ~3 minutes, écrit config/agents.json si le gain est confirmé
     python3 tools/eval_intake.py --fail
     rm config/agents.json             # retour aux valeurs d'origine
+
+## Banc d'essai du modèle de prix
+
+`python3 tools/backtest_market.py` compare le prix d'achat estimé aux relevés publics de `data/market_benchmarks.json` (Upply/Ti/IRU T3 2026). Écart absolu moyen actuel : 7,3 % sur 4 liaisons (biais −6,9 %). Quatre liaisons ne prouvent rien de solide : le vrai recalage viendra des réponses des transporteurs (agent `rfq`).

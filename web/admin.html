@@ -39,6 +39,10 @@
         <h2>Réclamations clients</h2><div id="claims"></div>
         <h2>Demandes de contact</h2><div id="contacts"></div>
         <h2>Chaînage de chargements (kilomètres à vide évités)</h2><div id="chaining"></div>
+        <h2>Demandes de devis aux transporteurs réels</h2>
+        <p class="muted small">Recensement : <code>python3 tools/import_carriers.py 43 42 69</code>. Ajoutez l'e-mail d'un transporteur avant de le solliciter ; rien ne part sans votre clic sur « Envoyer ».</p>
+        <div class="row"><input id="rfq-quote" placeholder="Identifiant du devis" aria-label="Identifiant du devis"><button id="rfq-draft" type="button">Préparer une demande</button></div>
+        <div id="rfq-preview"></div><div id="rfq-list"></div>
       </div>
       <h2>E-mails sortants</h2>
       <table class="data"><tbody id="outbox"></tbody></table>
