@@ -135,3 +135,5 @@ footer .small { font-size: 12px; }
 
 ul.included { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 6px; font-size: 14px; }
 ul.included li::before { content: "✓ "; color: var(--ok, #1a7f4b); font-weight: 700; }
+
+.hero-truck { display: block; width: 100%; max-width: 520px; height: auto; margin: 18px 0 6px; }
