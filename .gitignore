@@ -3,3 +3,8 @@ fretrau.db
 __pycache__/
 *.pyc
 .env
+
+__pycache__/
+*.pyc
+data/*.db
+.env
