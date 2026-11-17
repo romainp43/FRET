@@ -7,6 +7,7 @@
 - anonymise les réservations plus anciennes que FRETRAU_RETENTION_YEARS (défaut 5 ans)
   (les factures restent conservées 10 ans : obligation comptable)
 - purge les e-mails sortants après 90 jours
+- supprime les demandes de contact (et candidatures refusées) de plus d'un an
 - vérifie l'intégrité de la chaîne d'audit (code retour 2 si altérée)
 """
 import argparse
@@ -25,6 +26,7 @@ def run(db, retention_years=5):
         "quotes_purged": db.purge_quotes(30 * DAY),
         "bookings_anonymized": db.anonymize_older_than(int(retention_years * 365 * DAY)),
         "outbox_purged": db.purge_outbox(90 * DAY),
+        "leads_purged": db.purge_leads(365 * DAY),
     }
     ok, bad = db.verify_audit_chain()
     res["audit_intact"] = ok

@@ -49,6 +49,17 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT PRIMARY KEY, pw_hash TEXT NOT NULL, totp_secret TEXT, role TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS carrier_applications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, created_at REAL NOT NULL, status TEXT NOT NULL DEFAULT 'to_review',
+    data TEXT NOT NULL, checks TEXT NOT NULL, decided_by TEXT, decided_at REAL, note TEXT
+);
+CREATE TABLE IF NOT EXISTS contact_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, created_at REAL NOT NULL, status TEXT NOT NULL DEFAULT 'new', data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS claims (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER NOT NULL, created_at REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'received', data TEXT NOT NULL, deadlines TEXT NOT NULL, note TEXT
+);
 CREATE TABLE IF NOT EXISTS inbound (
     id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER NOT NULL, carrier_id INTEGER,
     received_at REAL NOT NULL, raw TEXT NOT NULL, parsed_amount REAL, decision TEXT NOT NULL
@@ -237,6 +248,67 @@ class DB:
             if json.loads(r["customer"]).get("name") != "ANONYMISÉ" and self.anonymize_booking(r["tracking_code"]):
                 n += 1
         return n
+
+    # ---- candidatures transporteurs, contacts, réclamations ----
+    def add_application(self, data, checks):
+        with _lock:
+            cur = self.conn.execute("INSERT INTO carrier_applications (created_at, data, checks) VALUES (?,?,?)",
+                                    (time.time(), json.dumps(data), json.dumps(checks)))
+            self.conn.commit()
+            return cur.lastrowid
+
+    def list_applications(self, limit=200):
+        return self._all("SELECT * FROM carrier_applications ORDER BY id DESC LIMIT ?", (limit,))
+
+    def decide_application(self, app_id, status, who, note):
+        with _lock:
+            cur = self.conn.execute("UPDATE carrier_applications SET status=?, decided_by=?, decided_at=?, note=? WHERE id=?",
+                                    (status, who, time.time(), note, app_id))
+            self.conn.commit()
+            return cur.rowcount == 1
+
+    def add_contact(self, data):
+        with _lock:
+            cur = self.conn.execute("INSERT INTO contact_requests (created_at, data) VALUES (?,?)", (time.time(), json.dumps(data)))
+            self.conn.commit()
+            return cur.lastrowid
+
+    def list_contacts(self, limit=200):
+        return self._all("SELECT * FROM contact_requests ORDER BY id DESC LIMIT ?", (limit,))
+
+    def set_contact_status(self, cid, status):
+        with _lock:
+            cur = self.conn.execute("UPDATE contact_requests SET status=? WHERE id=?", (status, cid))
+            self.conn.commit()
+            return cur.rowcount == 1
+
+    def add_claim(self, booking_id, data, deadlines):
+        with _lock:
+            cur = self.conn.execute("INSERT INTO claims (booking_id, created_at, data, deadlines) VALUES (?,?,?,?)",
+                                    (booking_id, time.time(), json.dumps(data), json.dumps(deadlines)))
+            self.conn.commit()
+            return cur.lastrowid
+
+    def claims_for(self, booking_id):
+        return self._all("SELECT * FROM claims WHERE booking_id=? ORDER BY id", (booking_id,))
+
+    def list_claims(self, limit=200):
+        return self._all("SELECT * FROM claims ORDER BY id DESC LIMIT ?", (limit,))
+
+    def set_claim_status(self, claim_id, status, note):
+        with _lock:
+            cur = self.conn.execute("UPDATE claims SET status=?, note=? WHERE id=?", (status, note, claim_id))
+            self.conn.commit()
+            return cur.rowcount == 1
+
+    def purge_leads(self, older_than_s):
+        """Supprime contacts et candidatures refusées/anciennes (minimisation RGPD)."""
+        cutoff = time.time() - older_than_s
+        with _lock:
+            a = self.conn.execute("DELETE FROM contact_requests WHERE created_at < ?", (cutoff,)).rowcount
+            b = self.conn.execute("DELETE FROM carrier_applications WHERE created_at < ? AND status='rejected'", (cutoff,)).rowcount
+            self.conn.commit()
+        return a + b
 
     # ---- audit chaîné ----
     def audit(self, actor, action, detail=""):

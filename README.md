@@ -120,3 +120,12 @@ Le référentiel complet n'est PAS dans le ZIP (fichier volumineux, licences à 
 - Europe (ES PT IT BE NL LU DE AT CH PL) : localités ≥ 500 habitants (GeoNames, CC-BY 4.0 — mention « Données GeoNames » à conserver).
 - Sans import, le site fonctionne avec 107 grandes villes et l'annonce clairement (administration : « référentiel complet NON installé »).
 - Une commune ambiguë (ex. Saint-Martin) demande le code postal ; la saisie accepte aussi un code postal seul.
+
+## v9 — Rubriques inspirées de l'analyse complète d'un site de courtage IA (LinkLane), adaptées à la France/UE
+- **7 pages services** avec FAQ (camion complet, groupage, lot partiel, frigorifique, plateau, express, combiné rail-route sur devis), **À propos**, **Secteurs**, **FAQ générale**, données structurées FAQPage. Régénérer : `python3 tools/build_site.py` (textes dans `tools/site_content.py`).
+- **Option Plateau** (camion complet) : surcoût de barème (confiance faible, à calibrer), transporteurs équipés uniquement, reconnue dans les e-mails.
+- **Espace transporteurs** (`/transporteurs.html`) : candidature + contrôles de forme (clé SIREN/SIRET, clé TVA FR, formats TVA UE, assurance ≥ 30 jours et ≥ 100 000 €), puis **revue humaine obligatoire** dans l'admin (jamais d'approbation automatique ; contrôles Sirene/VIES/registre à brancher ou à faire à la main).
+- **Réclamations** (`/reclamation.html`) : code de suivi + e-mail de la réservation, délais légaux calculés (Code de commerce L133-3/L133-6 ; CMR art. 30/32), suivi dans l'admin. À faire valider par un juriste.
+- **Contact / rappel** (`/contact.html`) et **chaînage de chargements** (admin) : repère des enchaînements pour réduire les kilomètres à vide.
+- Alertes e-mail à l'exploitation : variable `FRETRAU_OPS_EMAIL`. Purge RGPD des contacts après 1 an.
+- Non fait (volontairement) : paiement par carte (nécessite un prestataire), SMS (opérateur + consentement), prix en ligne combiné/lot partiel (pas de données fiables).

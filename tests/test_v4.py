@@ -130,7 +130,7 @@ class FrontEnd(unittest.TestCase):
                 txt = open(p, encoding="utf-8", errors="ignore").read()
                 self.assertIsNone(bad.search(txt), p)
                 if fn.endswith(".html"):
-                    self.assertNotRegex(txt, r"<script(?![^>]*\bsrc=)[^>]*>", p)
+                    self.assertNotRegex(txt, r"<script(?![^>]*\bsrc=)(?![^>]*application/ld\+json)[^>]*>", p)
                     self.assertNotRegex(txt, r"\son\w+\s*=", p)
 
     def test_booking_form_has_all_required_server_fields(self):

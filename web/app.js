@@ -156,6 +156,7 @@ async function track(code) {
       t.message ? el("p", { class: "muted" }, t.message) : el("ul", { class: "timeline" },
         ...t.events.map((ev) => el("li", { class: ev.done ? "done" : "" }, ev.label))),
       t.status === "confirmed" ? el("a", { class: "btn", href: "/api/doc/" + encodeURIComponent(code), target: "_blank", rel: "noopener" }, "Lettre de voiture") : "",
+      t.status === "confirmed" ? el("a", { class: "btn alt", href: "/reclamation.html" }, "Déclarer un problème") : "",
     );
     if (t.events.some((ev) => !ev.done)) timer = setTimeout(() => track(code), 5000);
   } catch (err) { $("track-result").replaceChildren(); showError("track-error", err.message); }

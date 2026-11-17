@@ -70,6 +70,7 @@ async function load() {
         el("td", {}, "échéance " + p.due_on), el("td", {}, p.status === "paid" ? `payé (${p.payment_ref})` : el("span", {}, input, btn)));
     }));
   }
+  await loadLeads();
   $("audit").replaceChildren(...stats.audit.map((a) =>
     el("tr", {}, el("td", {}, new Date(a.ts * 1000).toLocaleString("fr-FR")), el("td", {}, a.actor), el("td", {}, a.action), el("td", {}, a.detail || ""))));
 }
@@ -126,3 +127,54 @@ async function invoice(id, box) {
 }
 
 load().catch(() => {});   // session déjà valide ? sinon on reste sur le formulaire de connexion
+
+const when = (t) => new Date(t * 1000).toLocaleString("fr-FR");
+
+function actions(buttons) {
+  return el("div", {}, ...buttons.map(([label, fn]) => {
+    const b = el("button", { class: "ghost" }, label);
+    b.addEventListener("click", async () => { try { await fn(); loadLeads(); } catch (e) { b.textContent = e.message; } });
+    return b;
+  }));
+}
+
+async function loadLeads() {
+  const [apps, claims, contacts, chain] = await Promise.all([
+    optional("/api/admin/carriers"), optional("/api/admin/claims"), optional("/api/admin/contacts"), optional("/api/admin/chaining")]);
+  $("leads-box").classList.toggle("hidden", !(apps || claims || contacts || chain));
+  const empty = (t) => el("p", { class: "muted" }, t);
+  if (apps) {
+    $("applications").replaceChildren(...(apps.applications.length ? apps.applications.map((a) => {
+      const d = a.data, note = el("input", { placeholder: "Note : ce que vous avez vérifié (SIREN, licence, assurance, VIES)", maxlength: "300" });
+      return el("div", { class: "card" },
+        el("b", {}, `#${a.id} ${d.company} (${d.country})`), ` — ${a.status} — ${when(a.created_at)}`,
+        el("p", {}, `${d.contact_name} · ${d.email} · ${d.phone} · ${d.fleet_size} véhicule(s) · ${d.equipment.join(", ")} · garantie ${eur(d.insurance_cover_eur)} jusqu'au ${d.insurance_until}`),
+        el("p", { class: "muted small" }, "Contrôles de forme : " + a.checks.map((c) => (c.ok ? "✓ " : "✗ ") + c.label).join(" · ")),
+        el("p", { class: "muted small" }, "À vérifier à la main : existence de l'entreprise (Sirene/registre), licence, TVA active (VIES), attestation d'assurance."),
+        note,
+        actions([["Approuver", () => api("/api/admin/carriers/decision", { id: a.id, status: "approved", note: note.value })],
+                 ["Demander un complément", () => api("/api/admin/carriers/decision", { id: a.id, status: "more_info", note: note.value })],
+                 ["Refuser", () => api("/api/admin/carriers/decision", { id: a.id, status: "rejected", note: note.value })]]));
+    }) : [empty("Aucune candidature.")]));
+  }
+  if (claims) {
+    $("claims").replaceChildren(...(claims.claims.length ? claims.claims.map((c) => el("div", { class: "card" },
+      el("b", {}, `#${c.id} ${c.tracking_code}`), ` — ${c.data.kind} — ${c.status} — ${when(c.created_at)}`,
+      el("p", {}, c.data.description),
+      el("p", { class: "muted small" }, `Livré le ${c.data.delivered_on} · protestation avant le ${c.deadlines.written_reserve_before} · prescription ${c.deadlines.limitation_date} · réserves sur récépissé : ${c.data.reserves_on_receipt ? "oui" : "non"}${c.data.amount_eur ? " · " + eur(c.data.amount_eur) : ""}`),
+      actions([["Transmise au transporteur", () => api("/api/admin/claims/status", { id: c.id, status: "filed_with_carrier" })],
+               ["Réglée", () => api("/api/admin/claims/status", { id: c.id, status: "settled" })],
+               ["Refusée", () => api("/api/admin/claims/status", { id: c.id, status: "rejected" })]]))) : [empty("Aucune réclamation.")]));
+  }
+  if (contacts) {
+    $("contacts").replaceChildren(...(contacts.contacts.length ? contacts.contacts.map((c) => el("div", { class: "card" },
+      el("b", {}, `#${c.id} ${c.data.name}`), ` — ${c.data.topic} — ${c.status} — ${when(c.created_at)}`,
+      el("p", {}, `${c.data.email} ${c.data.phone || ""} ${c.data.slot ? "· rappel : " + c.data.slot : ""}`), el("p", {}, c.data.message),
+      actions([["Traitée", () => api("/api/admin/contacts/status", { id: c.id, status: "done" })]]))) : [empty("Aucune demande.")]));
+  }
+  if (chain) {
+    $("chaining").replaceChildren(...(chain.suggestions.length ? chain.suggestions.map((s) => el("p", {},
+      `${s.first} puis ${s.second} : ${s.route} — écart ${s.gap_km} km, environ ${s.saved_empty_km} km à vide évités (≈ ${eur(s.estimated_saving_eur)}, à confirmer avec le transporteur).`))
+      : [empty("Aucun enchaînement détecté entre les réservations confirmées.")]));
+  }
+}

@@ -7,7 +7,7 @@ from datetime import date
 from .. import geo
 
 EQUIPMENT = {"adr": ("adr", "habilitation ADR"), "tail_lift": ("tail_lift", "hayon élévateur"),
-             "temperature": ("reefer", "groupe froid")}
+             "temperature": ("reefer", "groupe froid"), "flatbed": ("flatbed", "plateau")}
 
 
 def check(carrier, mode: str, origin: str, destination: str, pickup: date, options: dict = None) -> tuple[bool, list]:

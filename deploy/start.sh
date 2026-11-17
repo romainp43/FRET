@@ -8,4 +8,5 @@ if [ ! -f "$FRETRAU_PLACES_DB" ]; then
   python3 tools/import_places.py --db "$FRETRAU_PLACES_DB" || echo "[FRETRAU] Import impossible : seules les grandes villes seront proposées."
 fi
 python3 tools/build_legal.py >/dev/null 2>&1 || true
+python3 tools/build_site.py >/dev/null 2>&1 || true
 exec python3 server.py

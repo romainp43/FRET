@@ -233,6 +233,7 @@ def parse(text: str, today: date = None) -> dict:
         "temperature": bool(re.search(r"temperature dirigee|frigo|refrigere|froid|reefer|\+4|\bsurgele", n)),
         "tail_lift": bool(re.search(r"hayon", n)),
         "urgent": bool(re.search(r"urgent|express|au plus vite|asap", n)),
+        "flatbed": bool(re.search(r"\bplateau\b|savoyarde|porte[- ]?engins?|semi plateau", n)),
     }
     fields["options"] = {k: v for k, v in options.items() if v}
     ld = re.search(r"livr\w*\s+(?:au plus tard\s+)?(?:le\s+)?(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?", n)

@@ -75,6 +75,10 @@
     "tail_lift": {
       "eur": 45.0,
       "confidence": "low"
+    },
+    "flatbed": {
+      "pct": 0.15,
+      "confidence": "low"
     }
   },
   "fuel": {

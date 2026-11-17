@@ -21,6 +21,7 @@ OPTIONS = {
     "tail_lift": "Hayon élévateur",
     "temperature": "Température dirigée",
     "urgent": "Express (livraison la plus rapide)",
+    "flatbed": "Plateau / semi-remorque non bâchée (camion complet)",
 }
 ALPINE = {"IT", "CH"}
 
@@ -96,7 +97,7 @@ def estimate_cost(mode, origin, destination, pallets, weight_kg, options, t=None
 
     subtotal = base
     o = t["options"]
-    for key, label in (("adr", "adr"), ("temperature", "temperature"), ("urgent", "express")):
+    for key, label in (("adr", "adr"), ("temperature", "temperature"), ("urgent", "express"), ("flatbed", "plateau")):
         if options.get(key):
             lines[label] = base * o[key]["pct"]
             subtotal += lines[label]
@@ -149,6 +150,10 @@ def build_quote(origin, destination, mode, pallets, weight_kg, options=None, pic
             raise QuoteError("Nombre de palettes invalide (1 à 33).")
         if weight_kg > pallets * 1000:
             raise QuoteError("Poids par palette supérieur à 1 000 kg : contactez-nous pour un devis sur mesure.")
+    if options.get("flatbed") and mode != "FTL":
+        raise QuoteError("Le plateau se commande en camion complet : choisissez « Camion complet » ou contactez-nous.")
+    if options.get("flatbed") and options.get("temperature"):
+        raise QuoteError("Plateau et température dirigée sont incompatibles.")
     if options.get("temperature") and options.get("adr"):
         raise QuoteError("ADR et température dirigée ne sont pas combinables en ligne : contactez-nous.")
 

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Réclamation — FRETRAU</title><meta name="description" content="Déclarer une avarie, un manque, une perte ou un retard."><link rel="stylesheet" href="/styles.css"></head>
+<body class="legal"><header class="top"><div class="wrap"><a class="brand" href="/">FRET<b>RAU</b></a><nav><a href="/#services">Services</a><a href="/secteurs.html">Secteurs</a><a href="/faq.html">Questions fréquentes</a><a href="/transporteurs.html">Transporteurs</a><a href="/contact.html">Contact</a><a href="/#suivi">Suivre un envoi</a></nav></div></header>
+<main class="wrap page"><h1>Déclarer un problème sur un envoi</h1>
+<p class="lead2">Avarie, manque, perte ou retard : déclarez-le ici. Nous calculons vos délais légaux et notre équipe traite la réclamation avec le transporteur.</p>
+<div class="card"><p><b>À faire dès la livraison :</b> inscrivez des réserves précises et datées sur le récépissé du transporteur, photographiez la marchandise et l'emballage. Ces preuves sont les plus importantes.</p></div>
+<form id="claim-form" class="card" novalidate>
+<div class="hp" aria-hidden="true"><label>Ne pas remplir<input name="website" tabindex="-1" autocomplete="off"></label></div>
+<div class="row"><div><label for="f-tracking_code">Code de suivi (FR-…)</label><input id="f-tracking_code" name="tracking_code" type="text" required autocomplete="off"></div><div><label for="f-email">E-mail de la réservation</label><input id="f-email" name="email" type="email" required ></div></div>
+<div class="row"><div><label for="f-kind">Nature du problème</label><select id="f-kind" name="kind"><option value="damage">Marchandise abîmée</option><option value="shortage">Manque / colis manquant</option><option value="loss">Marchandise perdue</option><option value="delay">Retard de livraison</option><option value="other">Autre problème</option></select></div><div><label for="f-delivered_on">Date de livraison</label><input id="f-delivered_on" name="delivered_on" type="date" required ></div></div>
+<label for="f-description">Description</label><textarea id="f-description" name="description" rows="5" maxlength="1500" required></textarea>
+<label for="f-amount_eur">Montant estimé du préjudice (€, facultatif)</label><input id="f-amount_eur" name="amount_eur" type="number"  min="1" inputmode="decimal">
+<label class="checks"><input type="checkbox" name="reserves_on_receipt"> J'ai inscrit des réserves sur le récépissé à la livraison</label>
+<button class="full" type="submit">Déclarer</button><div id="form-msg" class="muted" role="status"></div><div id="form-error" class="err hidden" role="alert"></div></form>
+<div id="claim-deadlines"></div>
+<p class="muted small">Délais indicatifs (à faire valider par votre conseil) : en France, protestation motivée par lettre recommandée sous 3 jours hors dimanches et jours fériés ; à l'international (CMR), 7 jours pour un dommage non apparent, 21 jours pour un retard ; prescription d'un an.</p></main>
+<footer><div class="wrap"><span>© FRETRAU</span><a href="/a-propos.html">À propos</a><a href="/reclamation.html">Réclamation</a><a href="/legal/mentions-legales.html">Mentions légales</a><a href="/legal/cgv.html">CGV</a><a href="/legal/cgu.html">CGU</a><a href="/legal/confidentialite.html">Confidentialité</a><a href="/legal/cookies.html">Cookies</a><span class="muted small">Données géographiques : GeoNames (CC BY 4.0) et geo.api.gouv.fr (Licence Ouverte).</span></div></footer><script src="/forms.js"></script></body></html>

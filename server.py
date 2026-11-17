@@ -17,7 +17,7 @@ from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from fretrau import booking, geo, invoicing, mailer, places, pricing, security
+from fretrau import booking, chaining, claims, geo, vetting, invoicing, mailer, places, pricing, security
 from fretrau.agents import email_agent, intake, ratematch, llm
 from fretrau.db import DB
 
@@ -60,6 +60,8 @@ RL_QUOTE = security.RateLimiter(20, 60)
 RL_BOOK = security.RateLimiter(5, 600)
 RL_LOGIN = security.RateLimiter(10, 900)
 RL_TRACK = security.RateLimiter(30, 60)
+RL_FORM = security.RateLimiter(6, 3600)                       # candidatures, demandes de contact, réclamations
+OPS_EMAIL = os.environ.get("FRETRAU_OPS_EMAIL", "")           # reçoit les alertes (candidature, contact, réclamation)
 GUARD = security.LoginGuard()
 
 
@@ -148,7 +150,7 @@ class Handler(BaseHTTPRequestHandler):
 
     PERMS = {  # rôle -> préfixes/points d'accès autorisés
         "admin": None,
-        "ops": ("bookings", "booking", "outbox", "stats", "me", "pod"),
+        "ops": ("bookings", "booking", "outbox", "stats", "me", "pod", "carriers", "contacts", "claims", "chaining"),
         "finance": ("bookings", "invoice", "stats", "me", "payables"),
     }
 
@@ -225,9 +227,137 @@ class Handler(BaseHTTPRequestHandler):
             return self.api_carrier_status()
         if method == "POST" and path == "/api/webhook/inbound-mail":
             return self.api_inbound_mail()
+        if method == "POST" and path == "/api/carrier/apply":
+            return self.api_carrier_apply()
+        if method == "POST" and path == "/api/contact":
+            return self.api_contact()
+        if method == "POST" and path == "/api/claim":
+            return self.api_claim()
         if path.startswith("/api/admin/"):
             return self.api_admin(method, path)
         raise ApiError(404, "Introuvable.")
+
+    # ---------- formulaires publics : candidature transporteur, contact / rendez-vous, réclamation ----------
+    def _form_guard(self):
+        if not RL_FORM.allow(self.ip()):
+            raise ApiError(429, "Trop de demandes envoyées depuis votre connexion, réessayez plus tard.")
+        d = self.read_json()
+        if d.get("website"):                                   # champ piège anti-robots
+            raise ApiError(200, "ok", {"ok": True})
+        return d
+
+    def _notify_ops(self, subject, body):
+        if OPS_EMAIL:
+            try:
+                mailer.queue(DB_, OPS_EMAIL, subject, body)
+                mailer.flush(DB_)
+            except Exception:
+                pass
+
+    def api_carrier_apply(self):
+        try:
+            d = self._form_guard()
+        except ApiError as e:
+            if e.status == 200:
+                return self.send_json(200, {"ok": True})
+            raise
+        try:
+            c = lambda k, n=120: security.clean_text(d.get(k), n)          # noqa: E731
+            country = c("country", 2).upper()
+            equipment = [x for x in (d.get("equipment") if isinstance(d.get("equipment"), list) else []) if x in vetting.EQUIPMENT]
+            fleet = d.get("fleet_size")
+            cover = d.get("insurance_cover_eur")
+            if isinstance(fleet, bool) or not isinstance(fleet, int) or not 1 <= fleet <= 5000:
+                raise ValueError("Taille de flotte invalide (1 à 5 000 véhicules).")
+            if isinstance(cover, bool) or not isinstance(cover, (int, float)) or not 0 < cover <= 50_000_000:
+                raise ValueError("Montant de garantie d'assurance invalide.")
+            app = {"company": c("company"), "country": country, "company_id": c("company_id", 20), "siret": (c("siret", 20) if d.get("siret") else ""),
+                   "vat": c("vat", 20), "licence": c("licence", 60), "insurer": c("insurer", 80),
+                   "insurance_until": c("insurance_until", 10), "insurance_cover_eur": float(cover), "fleet_size": fleet,
+                   "equipment": equipment, "countries": [x for x in (d.get("countries") if isinstance(d.get("countries"), list) else []) if x in vetting.COUNTRIES],
+                   "contact_name": c("contact_name", 80), "email": c("email", 254), "phone": c("phone", 20),
+                   "accept_charter": d.get("accept_charter") is True, "consent_at": time.time()}
+            if not security.EMAIL_RE.match(app["email"]) or not security.PHONE_RE.match(app["phone"]):
+                raise ValueError("Coordonnées invalides.")
+        except ValueError as e:
+            raise ApiError(422, str(e) if str(e) not in ("Champ vide ou trop long.", "Champ texte attendu.") else "Formulaire incomplet ou invalide : vérifiez chaque champ.")
+        res = vetting.check(app)
+        if not res["ok"]:
+            raise ApiError(422, "Votre dossier ne peut pas être enregistré en l'état.", {"problems": res["errors"]})
+        app_id = DB_.add_application(app, res["checks"])
+        DB_.audit("public", "carrier_application", str(app_id))
+        self._notify_ops(f"[FRETRAU] Nouvelle candidature transporteur #{app_id}", f"{app['company']} ({app['country']}) — à examiner dans l'administration.")
+        self.send_json(201, {"ok": True, "reference": f"T-{app_id:05d}",
+                             "message": "Dossier reçu. Nous vérifions l'entreprise, la licence et l'assurance avant tout transport, puis nous vous répondons par e-mail."})
+
+    CONTACT_TOPICS = {"quote": "Demande de prix", "intermodal": "Combiné rail-route (sur devis)", "special": "Transport spécial / hors gabarit",
+                      "account": "Compte entreprise / contrat annuel", "claim": "Question sur un envoi", "other": "Autre"}
+
+    def api_contact(self):
+        try:
+            d = self._form_guard()
+        except ApiError as e:
+            if e.status == 200:
+                return self.send_json(200, {"ok": True})
+            raise
+        try:
+            topic = d.get("topic") if d.get("topic") in self.CONTACT_TOPICS else "other"
+            req = {"name": security.clean_text(d.get("name"), 80), "company": security.clean_text(d.get("company"), 120) if d.get("company") else "",
+                   "email": security.clean_text(d.get("email"), 254), "phone": security.clean_text(d.get("phone"), 20) if d.get("phone") else "",
+                   "topic": topic, "message": security.clean_text(d.get("message"), 1500),
+                   "slot": security.clean_text(d.get("slot"), 80) if d.get("slot") else "",
+                   "consent": d.get("consent") is True, "consent_at": time.time()}
+            if not security.EMAIL_RE.match(req["email"]) or (req["phone"] and not security.PHONE_RE.match(req["phone"])):
+                raise ValueError
+            if not req["consent"]:
+                raise ApiError(422, "Merci de cocher la case pour que nous puissions vous répondre.")
+        except ValueError:
+            raise ApiError(422, "Formulaire incomplet ou invalide : nom, e-mail valide et message sont requis.")
+        cid = DB_.add_contact(req)
+        DB_.audit("public", "contact_request", str(cid))
+        self._notify_ops(f"[FRETRAU] Demande de contact #{cid} — {self.CONTACT_TOPICS[topic]}", f"{req['name']} <{req['email']}> : {req['message'][:300]}")
+        self.send_json(201, {"ok": True, "message": "Message reçu, nous vous répondons dès que possible."})
+
+    def api_claim(self):
+        try:
+            d = self._form_guard()
+        except ApiError as e:
+            if e.status == 200:
+                return self.send_json(200, {"ok": True})
+            raise
+        code = str(d.get("tracking_code", ""))
+        email = str(d.get("email", "")).strip().lower()
+        b = DB_.booking_by_code(code) if security.CODE_RE.match(code) else None
+        cust = json.loads(b["customer"]) if b else {}
+        if not b or b["status"] != "confirmed" or cust.get("email", "").lower() != email:
+            raise ApiError(404, "Aucun envoi ne correspond à ce code et à cet e-mail.")     # message unique : pas d'énumération
+        try:
+            kind = d.get("kind") if d.get("kind") in claims.KINDS else "other"
+            delivered_on = date.fromisoformat(security.clean_text(d.get("delivered_on"), 10))
+            if not date.today() - timedelta(days=400) <= delivered_on <= date.today():
+                raise ValueError
+            item = {"kind": kind, "delivered_on": delivered_on.isoformat(),
+                    "description": security.clean_text(d.get("description"), 1500),
+                    "reserves_on_receipt": d.get("reserves_on_receipt") is True,
+                    "amount_eur": security.clean_amount(d.get("amount_eur"))}
+        except ValueError:
+            raise ApiError(422, "Date de livraison (passée, de moins d'un an) et description du problème requises.")
+        s = json.loads(b["shipment"])
+        intl = geo.country(s["origin"]) != geo.country(s["destination"])
+        dl = claims.deadlines(kind, delivered_on, intl)
+        cid = DB_.add_claim(b["id"], item, dl)
+        DB_.audit("customer", "claim_filed", f"{code} #{cid}")
+        self._notify_ops(f"[FRETRAU] Réclamation #{cid} — {code}", f"{claims.KINDS[kind]} : {item['description'][:300]}")
+        try:
+            mailer.queue(DB_, cust["email"], f"FRETRAU — réclamation enregistrée ({code})",
+                         f"Bonjour,\n\nNous avons enregistré votre réclamation n°{cid} pour l'envoi {code} ({claims.KINDS[kind]}).\n"
+                         f"Pour préserver vos droits, envoyez une protestation écrite avant le {dl['written_reserve_before']} ({dl['rule']}).\n"
+                         f"L'action en justice se prescrit le {dl['limitation_date']}.\n\nL'équipe FRETRAU")
+            mailer.flush(DB_)
+        except Exception:
+            pass
+        self.send_json(201, {"ok": True, "claim": cid, "deadlines": dl,
+                             "message": "Réclamation enregistrée. Conservez vos photos et le récépissé de livraison."})
 
     def api_quote(self):
         if not RL_QUOTE.allow(self.ip()):
@@ -633,6 +763,59 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(404, "Réservation introuvable.")
             DB_.audit(who, "gdpr_export", m.group(1))
             return self.send_json(200, data)
+        if method == "GET" and path == "/api/admin/carriers":
+            rows = DB_.list_applications()
+            for r in rows:
+                r["data"], r["checks"] = json.loads(r["data"]), json.loads(r["checks"])
+            return self.send_json(200, {"applications": rows})
+        if method == "POST" and path == "/api/admin/carriers/decision":
+            d = self.read_json()
+            status = d.get("status")
+            aid = d.get("id")
+            if status not in ("approved", "rejected", "more_info", "to_review") or isinstance(aid, bool) or not isinstance(aid, int):
+                raise ApiError(422, "Décision invalide.")
+            note = security.clean_text(d["note"], 300) if d.get("note") else ""
+            if status == "approved" and not note:
+                raise ApiError(422, "Pour approuver, indiquez dans la note ce que vous avez vérifié (SIREN, licence, assurance, VIES).")
+            if not DB_.decide_application(aid, status, who, note):
+                raise ApiError(404, "Candidature introuvable.")
+            DB_.audit(who, "carrier_" + status, str(aid))
+            return self.send_json(200, {"ok": True})
+        if method == "GET" and path == "/api/admin/contacts":
+            rows = DB_.list_contacts()
+            for r in rows:
+                r["data"] = json.loads(r["data"])
+            return self.send_json(200, {"contacts": rows})
+        if method == "POST" and path == "/api/admin/contacts/status":
+            d = self.read_json()
+            if d.get("status") not in ("new", "done") or isinstance(d.get("id"), bool) or not isinstance(d.get("id"), int) or not DB_.set_contact_status(d["id"], d["status"]):
+                raise ApiError(422, "Requête invalide.")
+            DB_.audit(who, "contact_" + d["status"], str(d["id"]))
+            return self.send_json(200, {"ok": True})
+        if method == "GET" and path == "/api/admin/claims":
+            rows = DB_.list_claims()
+            for r in rows:
+                r["data"], r["deadlines"] = json.loads(r["data"]), json.loads(r["deadlines"])
+                b = DB_.booking_by_id(r["booking_id"])
+                r["tracking_code"] = b["tracking_code"] if b else ""
+            return self.send_json(200, {"claims": rows})
+        if method == "POST" and path == "/api/admin/claims/status":
+            d = self.read_json()
+            note = security.clean_text(d["note"], 300) if d.get("note") else ""
+            if d.get("status") not in ("received", "filed_with_carrier", "settled", "rejected") or isinstance(d.get("id"), bool) or not isinstance(d.get("id"), int) or not DB_.set_claim_status(d["id"], d["status"], note):
+                raise ApiError(422, "Requête invalide.")
+            DB_.audit(who, "claim_" + d["status"], str(d["id"]))
+            return self.send_json(200, {"ok": True})
+        if method == "GET" and path == "/api/admin/chaining":
+            items = []
+            for r in DB_.list_bookings(1000):
+                if r["status"] != "confirmed":
+                    continue
+                sh = json.loads(r["shipment"])
+                q = (DB_.get_quote(r["quote_id"], max_age_s=10 ** 9) or {}).get("quote", {})
+                items.append({"code": r["tracking_code"], "origin": sh["origin"], "destination": sh["destination"], "mode": sh["mode"],
+                              "pickup_date": sh["pickup_date"], "earliest_delivery": q.get("earliest_delivery", "")})
+            return self.send_json(200, {"suggestions": chaining.suggestions(items)})
         if method == "GET" and path == "/api/admin/stats":
             rows = DB_.list_bookings(10000)
             done = [r for r in rows if r["status"] == "confirmed"]

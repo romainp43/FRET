@@ -1,11 +1,9 @@
-.env
+*.age
 *.db
 *.db.gz
-*.age
+*.pyc
+.env
+__pycache__/
 backups/
 data/
-__pycache__/
-__pycache__/
-*.pyc
 data/*.db
-.env
