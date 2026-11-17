@@ -365,5 +365,13 @@ class IntakeCorpus(unittest.TestCase):
         self.assertGreaterEqual(r["n"], 90)
 
 
+class MarketBacktest(unittest.TestCase):
+    def test_model_stays_close_to_public_benchmarks(self):
+        import backtest_market
+        rows, mape, bias = backtest_market.run()
+        self.assertLessEqual(mape, 0.12)
+        self.assertGreaterEqual(len(rows), 4)
+
+
 if __name__ == "__main__":
     unittest.main()

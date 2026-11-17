@@ -14,6 +14,10 @@
         "mult": 1.45
       },
       {
+        "max_km": 250,
+        "mult": 1.3
+      },
+      {
         "max_km": 400,
         "mult": 1.12
       },
@@ -27,7 +31,7 @@
       }
     ],
     "min_charge_eur": 300,
-    "source": "Forme de la courbe calée sur les relevés T3 2026 (Duisbourg–Lille 2,10–2,21 €/km ; Madrid–Paris 1,36–1,48 €/km, trans.info / IRU / Upply / Transport Intelligence). Court trajet plus cher au km.",
+    "source": "Forme de la courbe calée sur les relevés T3 2026 (Duisbourg–Lille 2,10–2,21 €/km ; Madrid–Paris 1,36–1,48 €/km, trans.info / IRU / Upply / Transport Intelligence). Court trajet plus cher au km. Palier 150–250 km ajouté (1,30) après banc d'essai : Anvers–Duisbourg (207 km) relevé à 2,74–3,02 €/km contre 2,10 modélisé ; un seul relevé, confiance faible.",
     "confidence": "medium"
   },
   "country_cost_index": {
@@ -41,8 +45,8 @@
     "DE": 1.1,
     "AT": 1.08,
     "CH": 1.45,
-    "PL": 0.78,
-    "source": "ES et DE calés sur les relevés T3 2026 ci-dessus ; les autres pays sont des hypothèses.",
+    "PL": 0.85,
+    "source": "ES et DE calés sur les relevés T3 2026 ci-dessus ; les autres pays sont des hypothèses. PL relevé de 0,78 à 0,85 après banc d'essai (Varsovie–Duisbourg 1,55–1,65 €/km) ; un seul relevé.",
     "confidence": {
       "ES": "medium",
       "DE": "medium",
