@@ -69,6 +69,7 @@ RL_QUOTE = security.RateLimiter(20, 60)
 RL_BOOK = security.RateLimiter(5, 600)
 RL_LOGIN = security.RateLimiter(10, 900)
 RL_TRACK = security.RateLimiter(30, 60)
+RL_SENDQUOTE_ADDR = security.RateLimiter(3, 86400)                # 3 devis par adresse et par jour (anti-harcèlement)
 RL_FORM = security.RateLimiter(6, 3600)                       # candidatures, demandes de contact, réclamations
 OPS_EMAIL = os.environ.get("FRETRAU_OPS_EMAIL", "")           # reçoit les alertes (candidature, contact, réclamation)
 GUARD = security.LoginGuard()
@@ -224,6 +225,8 @@ class Handler(BaseHTTPRequestHandler):
         m = re.fullmatch(r"/api/quote/([A-Za-z0-9_-]{8,40})", path)
         if method == "GET" and m:
             return self.api_quote_get(m.group(1))
+        if method == "POST" and path == "/api/quote/send":
+            return self.api_quote_send()
         if method == "POST" and path == "/api/ratematch":
             return self.api_ratematch()
         if method == "POST" and path == "/api/intake/email":
@@ -582,6 +585,38 @@ class Handler(BaseHTTPRequestHandler):
             "earliest_delivery": q["earliest_delivery"], "warnings": q["warnings"], "pallets": q["pallets"],
             "co2_kg": q.get("co2_kg", 0.0),
         }
+
+    def api_quote_send(self):
+        """Envoie le devis par e-mail (lien + récapitulatif). Garde-fous : honeypot, limite par IP et par adresse."""
+        try:
+            d = self._form_guard()
+        except ApiError as e:
+            if e.status == 200:
+                return self.send_json(200, {"ok": True})
+            raise
+        email = security.clean_text(d.get("email"), 254).lower()
+        if not security.EMAIL_RE.match(email):
+            raise ApiError(422, "Adresse e-mail invalide.")
+        stored = DB_.get_quote(str(d.get("quote_id", ""))[:40])
+        if not stored:
+            raise ApiError(404, "Devis introuvable ou expiré.")
+        if not RL_SENDQUOTE_ADDR.allow(email):
+            raise ApiError(429, "Plusieurs devis ont déjà été envoyés à cette adresse aujourd'hui.")
+        v = self.quote_view(str(d["quote_id"])[:40], stored["quote"])
+        body = (f"Bonjour,\n\nVoici votre devis de transport FRETRAU.\n\n"
+                f"Trajet : {v['origin']} → {v['destination']} ({v['distance_km']} km)\n"
+                f"Type : {'Camion complet' if v['mode'] == 'FTL' else 'Palettes'}\n"
+                f"Prix : {v['price_ht']:.2f} € HT" + (f" ({v['price_ttc']:.2f} € TTC)" if v["vat"] else "") + "\n"
+                f"Livraison estimée sous {v['transit_days']} jour(s)\n"
+                f"Devis valable {v['valid_hours']} h. Retrouvez-le, réservez ou transférez-le avec ce lien :\n"
+                f"{PUBLIC_URL}/#devis={v['quote_id']}\n\n"
+                f"Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.\nFRETRAU")
+        try:
+            mailer.queue(DB_, email, "Votre devis de transport FRETRAU", body)
+            mailer.flush(DB_)
+        except ValueError:
+            raise ApiError(422, "Adresse e-mail invalide.")
+        self.send_json(200, {"ok": True})
 
     def api_quote_get(self, quote_id):
         if not RL_TRACK.allow(self.ip()):

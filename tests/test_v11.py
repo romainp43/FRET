@@ -127,3 +127,35 @@ class Questions(unittest.TestCase):
             self.assertEqual(server.DB_.get_quote(q["quote_id"])["shipment"]["adr_un"], "1263")
         finally:
             httpd.shutdown()
+
+
+class SendQuote(unittest.TestCase):
+    def test_send_quote_by_email(self):
+        import server
+        server.RL_FORM.hits.clear(); server.RL_QUOTE.hits.clear(); server.RL_GLOBAL.hits.clear(); server.RL_SENDQUOTE_ADDR.hits.clear()
+        httpd = server.make_server("127.0.0.1", 0)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+        def post(path, b):
+            req = urllib.request.Request(base + path, method="POST", data=json.dumps(b).encode(), headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req) as r:
+                    return r.status, json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read())
+        try:
+            st, q = post("/api/quote", {"origin": "Lyon", "destination": "Paris", "mode": "FTL", "pallets": 20, "weight_kg": 9000,
+                                        "pickup_date": (date.today() + timedelta(days=2)).isoformat(), "options": {}})
+            self.assertEqual(st, 200)
+            self.assertEqual(post("/api/quote/send", {"quote_id": q["quote_id"], "email": "pas-un-mail"})[0], 422)
+            self.assertEqual(post("/api/quote/send", {"quote_id": "inconnu123456", "email": "a@b.fr"})[0], 404)
+            self.assertEqual(post("/api/quote/send", {"quote_id": q["quote_id"], "email": "client@exemple.fr"})[0], 200)
+            queued = [m for m in server.DB_.queued_mails() if m["to_addr"] == "client@exemple.fr"]
+            self.assertTrue(queued)
+            self.assertIn("#devis=" + q["quote_id"], queued[-1]["body"])
+            for _ in range(3):
+                last = post("/api/quote/send", {"quote_id": q["quote_id"], "email": "client@exemple.fr"})[0]
+            self.assertEqual(last, 429)
+        finally:
+            httpd.shutdown()

@@ -49,7 +49,7 @@
             <p id="places-hint" class="muted small hidden">Pour l'instant, seules les grandes villes sont proposées. Pour une autre commune, envoyez-nous votre demande par e-mail.</p>
             <div class="row">
               <div><label for="pallets" id="pallets-label">Palettes (facultatif)</label><input id="pallets" type="number" min="1" max="33" inputmode="numeric"></div>
-              <div><label for="weight">Poids total (kg)</label><input id="weight" type="number" min="1" max="24000" required inputmode="numeric"></div>
+              <div><label for="weight">Poids total (kg)</label><input id="weight" type="number" min="1" max="24000" required inputmode="numeric" aria-describedby="weight-hint"><span id="weight-hint" class="muted small">Poids brut, palettes comprises : un poids ou des dimensions sous-déclarés entraînent des frais supplémentaires.</span></div>
             </div>
             <label for="cargo">Que transportez-vous ?</label>
             <select id="cargo">
@@ -68,7 +68,7 @@
             <div class="checks" id="options"></div>
             <div id="ltl-row" class="row hidden">
               <div><label for="pallet-height">Hauteur d'une palette (cm)</label><input id="pallet-height" type="number" min="20" max="220" inputmode="numeric" placeholder="Ex. 110"></div>
-              <div><label class="checks"><input type="checkbox" id="stackable"> Palettes gerbables (empilables)</label></div>
+              <div><label class="inline-check"><input type="checkbox" id="stackable"> Palettes gerbables (empilables)</label></div>
             </div>
             <div id="adr-row" class="row hidden">
               <div><label for="adr-class">Classe ADR</label><select id="adr-class"><option value="">Choisir</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option></select></div>

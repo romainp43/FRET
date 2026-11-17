@@ -107,6 +107,19 @@ $("quote-form").addEventListener("submit", async (e) => {
   finally { $("quote-btn").disabled = false; }
 });
 
+function sendBlock(q) {
+  const input = el("input", { type: "email", placeholder: "votre@email.fr", "aria-label": "Votre adresse e-mail", autocomplete: "email" });
+  const msg = el("span", { class: "muted small", role: "status" });
+  const btn = el("button", { type: "button", class: "alt-btn" }, "Recevoir ce devis par e-mail");
+  btn.addEventListener("click", async () => {
+    msg.textContent = "";
+    try { await api("/api/quote/send", { quote_id: q.quote_id, email: input.value.trim() }); msg.textContent = "Devis envoyé : vérifiez votre boîte de réception."; }
+    catch (e) { msg.textContent = e.message; }
+  });
+  return el("div", { class: "send" }, input, btn, msg,
+    el("a", { href: "/contact.html", class: "small" }, "Une question ? Être rappelé"));
+}
+
 function altBlock(q) {
   const alts = q.alternatives || [];
   if (!alts.length) return [];
@@ -139,6 +152,7 @@ function renderQuote(q, body) {
       q.co2_kg ? el("li", {}, `Émissions estimées : environ ${Math.round(q.co2_kg).toLocaleString("fr-FR")} kg CO₂e (estimation indicative ; l'information CO₂ officielle vous est remise après le transport)`) : ""),
     ...(q.warnings || []).map((w) => el("p", { class: "warn" }, w)),
     el("p", { class: "muted" }, `Prix valable ${q.valid_hours} h.`),
+    sendBlock(q),
   );
   $("book-card").classList.remove("hidden");
   $("match-card").classList.remove("hidden");

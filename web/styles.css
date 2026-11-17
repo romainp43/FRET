@@ -140,3 +140,7 @@ ul.included li::before { content: "✓ "; color: var(--ok, #1a7f4b); font-weight
 .alt { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; background: #fff4ee; border: 1px solid #ffd9c4; border-radius: 10px; padding: 10px 12px; margin: 8px 0; font-size: 14px; }
 .alt-btn { background: #fff; color: var(--accent-d); border: 2px solid var(--accent); padding: 7px 12px; }
 .alt-btn:hover { background: var(--accent); color: #fff; }
+.send { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.send input { flex: 1 1 200px; width: auto; }
+.inline-check { display: flex; align-items: center; gap: 7px; font-weight: 500; margin-top: 30px; }
+.inline-check input { width: auto; }
