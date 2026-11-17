@@ -202,7 +202,7 @@ class TestCalibration(unittest.TestCase):
         for o, d in [("Lyon", "Paris"), ("Lyon", "Marseille"), ("Paris", "Lille"), ("Bordeaux", "Toulouse")] * 6:
             est = pricing.estimate_cost("FTL", o, d, 33, 18000, {})
             rows.append({"origin": o, "destination": d, "mode": "FTL", "pallets": 33, "weight_kg": 18000,
-                         "actual_price_ht": round(est["mid"] * 1.10, 2)})
+                         "actual_price_ht": round(est["mid"] * 1.15, 2)})
         with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, newline="") as f:
             w = csv.DictWriter(f, fieldnames=list(rows[0]))
             w.writeheader()
@@ -210,10 +210,10 @@ class TestCalibration(unittest.TestCase):
         samples = calibration.load_samples(f.name)
         os.unlink(f.name)
         rep = calibration.evaluate(samples)
-        self.assertAlmostEqual(rep["overall"]["bias_median_ratio"], 1.10, places=2)
-        self.assertEqual(rep["overall"]["coverage"], 0.0)      # +10 % dépasse l'intervalle national de +/- 8 %
+        self.assertAlmostEqual(rep["overall"]["bias_median_ratio"], 1.15, places=2)
+        self.assertEqual(rep["overall"]["coverage"], 0.0)      # +15 % dépasse l'intervalle national (+/- 8 %, +3 % de marge quand la distance est estimée)
         for g in calibration.suggest(samples).values():
-            self.assertTrue(1.0 < g["suggested_multiplier"] < 1.10)        # rétrécissement vers 1
+            self.assertTrue(1.0 < g["suggested_multiplier"] < 1.15)        # rétrécissement vers 1
 
     def test_small_bias_stays_inside_interval(self):
         samples = [{"origin": "Lyon", "destination": "Paris", "mode": "FTL", "pallets": 33, "weight_kg": 18000,

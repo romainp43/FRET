@@ -241,3 +241,78 @@ class OrsRouting(unittest.TestCase):
             routing._cache.clear()
             if os.path.exists(routing.CACHE_FILE):
                 os.remove(routing.CACHE_FILE)
+
+
+class AdminHttp(unittest.TestCase):
+    def test_chaining_and_outcomes_with_a_confirmed_booking(self):
+        import server
+        httpd = server.make_server("127.0.0.1", 0)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+        def call(method, path, body=None, headers=None):
+            h = {"Content-Type": "application/json", **(headers or {})}
+            req = urllib.request.Request(base + path, method=method, data=json.dumps(body).encode() if body is not None else None, headers=h)
+            try:
+                with urllib.request.urlopen(req) as r:
+                    return r.status, json.loads(r.read() or b"{}"), r.headers
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read() or b"{}"), e.headers
+        try:
+            real_hash = server.ADMIN_HASH
+            server.ADMIN_HASH = server.security.hash_password("mot-de-passe-de-test-long")
+            st, _, hd = call("POST", "/api/admin/login", {"user": "admin", "password": "mot-de-passe-de-test-long"})
+            server.ADMIN_HASH = real_hash
+            self.assertEqual(st, 200)
+            auth = {"Cookie": hd["Set-Cookie"].split(";")[0], "X-Requested-With": "fretrau"}
+            server.DB_.save_booking(tracking_code="FR-BBBBBBBBBBBB", quote_id="q-chain", status="confirmed",
+                                    customer={"name": "T", "company": "T", "email": "t@t.fr", "phone": "0600000000"},
+                                    shipment={"origin": "Lyon", "destination": "Paris", "mode": "FTL", "pickup_date": "2026-12-01"},
+                                    customer_price_ht=1000.0, agent_log={}, carrier_id=1, carrier_name="Rhône Fret", carrier_price=800.0)
+            self.assertEqual(call("GET", "/api/admin/chaining", headers=auth)[0], 200)          # plantait (500) avec une réservation confirmée
+            self.assertEqual(call("POST", "/api/admin/outcome", {"tracking_code": "FR-BBBBBBBBBBBB", "actual_cost_ht": 820, "on_time": True}, auth)[0], 200)
+            self.assertEqual(call("POST", "/api/admin/outcome", {"tracking_code": "FR-BBBBBBBBBBBB", "actual_cost_ht": -5, "on_time": True}, auth)[0], 422)
+            self.assertEqual(call("POST", "/api/admin/outcome", {"tracking_code": "FR-BBBBBBBBBBBB", "actual_cost_ht": 820, "on_time": "oui"}, auth)[0], 422)
+            st, rep, _ = call("GET", "/api/admin/outcomes", headers=auth)
+            self.assertEqual((st, rep["count"]), (200, 1))
+            self.assertEqual(call("POST", "/api/admin/outcome", {"tracking_code": "FR-BBBBBBBBBBBB", "actual_cost_ht": 820, "on_time": True})[0], 401)
+        finally:
+            httpd.shutdown()
+
+
+class InternalErrors(unittest.TestCase):
+    def test_internal_error_is_logged_not_leaked(self):
+        import contextlib, io, server
+        httpd = server.make_server("127.0.0.1", 0)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        real = server.Handler.api
+
+        def boom(self, method, path):
+            raise RuntimeError("secret-interne")
+        server.Handler.api = boom
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                try:
+                    urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/api/cities")
+                except urllib.error.HTTPError as e:
+                    body = e.read().decode()
+                    self.assertEqual(e.code, 500)
+                    self.assertNotIn("secret-interne", body)               # rien ne fuit vers le client
+            self.assertIn("secret-interne", err.getvalue())                 # mais l'exploitant voit la trace
+        finally:
+            server.Handler.api = real
+            httpd.shutdown()
+
+
+class EstimatedDistanceMargin(unittest.TestCase):
+    def test_estimated_distance_widens_interval_but_measured_does_not(self):
+        from fretrau import routing
+        base = pricing.estimate_cost("FTL", "Lyon", "Paris", 33, 18000, {})["uncertainty"]
+        real = routing.distance
+        routing.distance = lambda a, b: (466.0, "ors")
+        try:
+            measured = pricing.estimate_cost("FTL", "Lyon", "Paris", 33, 18000, {})["uncertainty"]
+        finally:
+            routing.distance = real
+        self.assertAlmostEqual(base - measured, 0.03, places=3)

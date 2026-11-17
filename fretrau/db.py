@@ -175,7 +175,7 @@ class DB:
         return rows[0] if rows else None
 
     def list_bookings(self, limit=200):
-        return self._all("SELECT id, tracking_code, created_at, status, carrier_name, carrier_price, "
+        return self._all("SELECT id, tracking_code, quote_id, created_at, status, carrier_name, carrier_price, "
                          "customer_price_ht, shipment FROM bookings ORDER BY id DESC LIMIT ?", (limit,))
 
     def anonymize_booking(self, code):

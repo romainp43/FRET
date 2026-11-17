@@ -35,6 +35,19 @@
         <p class="muted small" id="payables-total"></p>
         <table class="data"><tbody id="payables"></tbody></table>
       </div>
+      <div id="outcomes-box" class="hidden">
+        <h2>Résultats réels</h2>
+        <p class="muted small">Après chaque transport : coût réellement payé et ponctualité. Le rapport compare la réalité aux prévisions des agents (rien n'est modifié automatiquement).</p>
+        <form id="outcome-form" class="row">
+          <div><label for="oc-code">Code de suivi</label><input id="oc-code" placeholder="FR-XXXXXXXXXXXX" required></div>
+          <div><label for="oc-cost">Coût réel HT (€)</label><input id="oc-cost" type="number" min="1" step="0.01" required inputmode="decimal"></div>
+          <div><label for="oc-ontime">Livraison</label><select id="oc-ontime"><option value="1">À l'heure</option><option value="0">En retard</option></select></div>
+          <div><label for="oc-note">Note (facultatif)</label><input id="oc-note" maxlength="300"></div>
+          <button type="submit">Enregistrer</button>
+        </form>
+        <div id="oc-msg" class="muted small" role="status"></div>
+        <div id="oc-report"></div>
+      </div>
       <div id="leads-box" class="hidden">
         <h2>Candidatures transporteurs</h2><div id="applications"></div>
         <h2>Réclamations clients</h2><div id="claims"></div>

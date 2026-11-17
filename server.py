@@ -14,6 +14,7 @@ import re
 import secrets
 import statistics
 import time
+import traceback
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -187,7 +188,8 @@ class Handler(BaseHTTPRequestHandler):
         except ApiError as e:
             self.send_json(e.status, {"error": e.message, **e.extra})
         except Exception:
-            self.send_json(500, {"error": "Erreur interne."})      # jamais de trace au client
+            traceback.print_exc()                                    # la trace va dans le journal du serveur, jamais au client
+            self.send_json(500, {"error": "Erreur interne."})
 
     def do_GET(self):
         self.dispatch("GET")
@@ -1001,7 +1003,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(422, "Coût réel HT invalide.")
             if not isinstance(d.get("on_time"), bool):
                 raise ApiError(422, "Indiquez si la livraison était à l'heure (true/false).")
-            DB_.record_outcome(b["id"], cost, d["on_time"], security.clean_text(d.get("note"), 300), who)
+            DB_.record_outcome(b["id"], cost, d["on_time"], security.clean_text(d.get("note"), 300) if d.get("note") else "", who)
             DB_.audit(who, "outcome", f"{code} coût {cost}")
             return self.send_json(200, {"ok": True})
         if method == "GET" and path == "/api/admin/outcomes":

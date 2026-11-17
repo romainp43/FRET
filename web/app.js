@@ -152,8 +152,14 @@ function renderQuote(q, body) {
       q.co2_kg ? el("li", {}, `Émissions estimées : environ ${Math.round(q.co2_kg).toLocaleString("fr-FR")} kg CO₂e (estimation indicative ; l'information CO₂ officielle vous est remise après le transport)`) : ""),
     ...(q.warnings || []).map((w) => el("p", { class: "warn" }, w)),
     el("p", { class: "muted" }, `Prix valable ${q.valid_hours} h.`),
+    el("p", { class: "muted small" }, "Responsabilité : en cas de perte, d'avarie ou de retard, l'indemnité est plafonnée selon le contrat type applicable (voir l'article 8 des ",
+      el("a", { href: "/legal/cgv.html", target: "_blank", rel: "noopener" }, "conditions générales de vente"),
+      "). Pour une marchandise de valeur, indiquez-la au moment de la réservation : une assurance complémentaire peut être proposée."),
+    q.vat > 0 ? "" : el("p", { class: "muted small" }, "Transport international : une lettre de voiture CMR est établie. Hors Union européenne (Royaume-Uni, Suisse…), la déclaration en douane et les documents d'origine restent à fournir par le donneur d'ordre."),
     sendBlock(q),
   );
+  const done = $("book-done"); if (done) done.remove();
+  $("book-form").classList.remove("hidden"); $("book-title").classList.remove("hidden");
   $("book-card").classList.remove("hidden");
   $("match-card").classList.remove("hidden");
   $("match-msg").textContent = "";
@@ -186,15 +192,18 @@ $("book-form").addEventListener("submit", async (e) => {
     if (!r.tracking_code) return;
     location.hash = r.tracking_code;
     $("track-code").value = r.tracking_code;
-    $("book-card").replaceChildren(
+    $("book-form").classList.add("hidden");
+    $("book-title").classList.add("hidden");
+    const old = $("book-done"); if (old) old.remove();
+    $("book-card").append(el("div", { id: "book-done" },
       el("h2", {}, r.status === "confirmed" ? "Transport confirmé" : "Demande reçue"),
       el("div", { class: "ok-box" }, `Votre code de suivi : ${r.tracking_code}`),
       el("p", { class: "muted" }, "Conservez ce code : il vous permet de suivre l'envoi et de télécharger la lettre de voiture."),
-    );
+    ));
     track(r.tracking_code);
     $("suivi").scrollIntoView({ behavior: "smooth" });
   } catch (err) { showError("book-error", err.message); }
-  finally { $("book-btn").disabled = false; }
+  finally { const bb = $("book-btn"); if (bb) bb.disabled = false; }
 });
 
 let timer = null;

@@ -83,8 +83,10 @@ def _is_alpine(a, b):
 def estimate_cost(mode, origin, destination, pallets, weight_kg, options, t=None, km=None):
     """Retourne un dict : km, mid, low, high, uncertainty, lines, warnings, units."""
     t = t or tariff.load()
+    km_estimated = False
     if km is None:
-        km = routing.distance(origin, destination)[0]
+        km, src = routing.distance(origin, destination)
+        km_estimated = src == "estimation"
     factor = _country_factor(t, origin, destination)
     warnings, lines = [], {}
     ftl = _ftl_base(t, km, factor)
@@ -132,6 +134,8 @@ def estimate_cost(mode, origin, destination, pallets, weight_kg, options, t=None
     if _is_alpine(origin, destination):
         unc += u["alpine_extra"]
         warnings.append("Traversée alpine : péages de tunnel et restrictions de circulation possibles.")
+    if km_estimated:
+        unc += u.get("estimated_distance_extra", 0.0)     # distance à vol d'oiseau corrigée : peut sous-estimer les détours (Massif central, Alpes, Pyrénées)
     mid = round(subtotal, 2)
     return {"km": km, "mid": mid, "low": round(mid * (1 - unc), 2), "high": round(mid * (1 + unc), 2),
             "uncertainty": round(unc, 3), "lines": {k: round(v, 2) for k, v in lines.items()},

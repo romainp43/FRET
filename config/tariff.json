@@ -106,7 +106,8 @@
     "ltl_domestic": 0.15,
     "ltl_international": 0.2,
     "switzerland_extra": 0.13,
-    "alpine_extra": 0.05
+    "alpine_extra": 0.05,
+    "estimated_distance_extra": 0.03
   },
   "margin": {
     "target": 0.12,

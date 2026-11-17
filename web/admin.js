@@ -70,6 +70,7 @@ async function load() {
         el("td", {}, "échéance " + p.due_on), el("td", {}, p.status === "paid" ? `payé (${p.payment_ref})` : el("span", {}, input, btn)));
     }));
   }
+  await loadOutcomes();
   await loadLeads();
   $("audit").replaceChildren(...stats.audit.map((a) =>
     el("tr", {}, el("td", {}, new Date(a.ts * 1000).toLocaleString("fr-FR")), el("td", {}, a.actor), el("td", {}, a.action), el("td", {}, a.detail || ""))));
@@ -200,4 +201,38 @@ $("rfq-draft").addEventListener("click", async () => {
       box.append(b);
     }
   } catch (e) { $("rfq-preview").replaceChildren(el("div", { class: "err" }, e.message)); }
+});
+
+
+async function loadOutcomes() {
+  const rep = await optional("/api/admin/outcomes");
+  $("outcomes-box").classList.toggle("hidden", !rep);
+  if (!rep) return;
+  const pct = (v) => (v === null || v === undefined ? "—" : `${String(v).replace(".", ",")} %`);
+  const rows = [
+    el("p", {}, `${rep.count} transport(s) enregistré(s). Marge réalisée : ${eur(rep.realized_margin_ht)} (${pct(rep.realized_margin_pct)}) · écart coût réel / prix négocié : ${pct(rep.cost_vs_negotiated_pct)} · ponctualité : ${rep.on_time_rate === null ? "—" : Math.round(rep.on_time_rate * 100) + " %"}`),
+  ];
+  if (rep.indicative_only) rows.push(el("p", { class: "warn" }, `Moins de ${rep.min_sample} transports : chiffres indicatifs, ne recalez rien sur cette base.`));
+  if (rep.carriers.length) {
+    rows.push(el("table", { class: "data" }, el("tbody", {}, ...rep.carriers.map((c) =>
+      el("tr", {}, el("td", {}, c.carrier || "—"), el("td", {}, `${c.count} transport(s)`), el("td", {}, `ponctualité ${Math.round(c.on_time_rate * 100)} %`),
+        el("td", {}, c.indicative_only ? "indicatif (moins de 5)" : ""))))));
+  }
+  $("oc-report").replaceChildren(...rows);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const f = $("outcome-form");
+  if (!f) return;
+  f.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    $("oc-msg").textContent = "";
+    try {
+      await api("/api/admin/outcome", { tracking_code: $("oc-code").value.trim(), actual_cost_ht: parseFloat($("oc-cost").value),
+        on_time: $("oc-ontime").value === "1", note: $("oc-note").value });
+      $("oc-msg").textContent = "Résultat enregistré.";
+      f.reset();
+      loadOutcomes();
+    } catch (e) { $("oc-msg").textContent = e.message; }
+  });
 });
